@@ -4,8 +4,16 @@
             "outputFile": "com.acdmt.app-debug-4:/values_values.arsc.flat",
             "map": [
                 {
-                    "source": "C:\\Users\\Rahul\\Documents\\ACDMT\\app\\src\\main\\res\\values\\styles.xml",
+                    "source": "C:\\Users\\Admin\\Desktop\\AdaptiveWMApp\\app\\src\\main\\res\\values\\styles.xml",
                     "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "57",
+                        "endLines": "9",
+                        "endColumns": "12",
+                        "endOffsets": "508"
+                    },
+                    "to": {
                         "startLines": "2",
                         "startColumns": "4",
                         "startOffsets": "55",

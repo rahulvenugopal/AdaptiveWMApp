@@ -46,7 +46,7 @@ class MainActivity : Activity(), TrialRunner.Callbacks {
         root = createContentView()
         setContentView(root)
         updateRendererScreenMetrics()
-        renderer.post { trialRunner.start() }
+        showInstructions()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -254,5 +254,42 @@ class MainActivity : Activity(), TrialRunner.Callbacks {
 
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density).roundToInt()
+    }
+
+    private fun showInstructions() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(StimulusRenderer.BACKGROUND_COLOR)
+            setPadding(dp(32), dp(48), dp(32), dp(32))
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+        }
+
+        val text = TextView(this).apply {
+            text = "You will see a fixation cross and then a cue to left or right.\n\n" +
+                   "Focus only on the cued side.\n\n" +
+                   "One of the color would change in cued side, position wont change.\n\n" +
+                   "Press match if the initial array is ditto same as other and press mismatch if there is a mismatch.\n\n" +
+                   "Tap anywhere to continue."
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            gravity = Gravity.CENTER
+        }
+
+        panel.addView(text)
+
+        panel.setOnClickListener {
+            root.removeView(panel)
+            renderer.post { trialRunner.start() }
+        }
+
+        root.addView(
+            panel,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
     }
 }

@@ -1,7 +1,7 @@
-com.acdmt.app-pngs-0 C:\Users\Rahul\Documents\ACDMT\app\build\generated\res\pngs\debug
-com.acdmt.app-resValues-1 C:\Users\Rahul\Documents\ACDMT\app\build\generated\res\resValues\debug
-com.acdmt.app-packageDebugResources-2 C:\Users\Rahul\Documents\ACDMT\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
-com.acdmt.app-packageDebugResources-3 C:\Users\Rahul\Documents\ACDMT\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
-com.acdmt.app-debug-4 C:\Users\Rahul\Documents\ACDMT\app\build\intermediates\merged_res\debug\mergeDebugResources
-com.acdmt.app-debug-5 C:\Users\Rahul\Documents\ACDMT\app\src\debug\res
-com.acdmt.app-main-6 C:\Users\Rahul\Documents\ACDMT\app\src\main\res
+com.acdmt.app-pngs-0 C:\Users\Admin\Desktop\AdaptiveWMApp\app\build\generated\res\pngs\debug
+com.acdmt.app-resValues-1 C:\Users\Admin\Desktop\AdaptiveWMApp\app\build\generated\res\resValues\debug
+com.acdmt.app-packageDebugResources-2 C:\Users\Admin\Desktop\AdaptiveWMApp\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.acdmt.app-packageDebugResources-3 C:\Users\Admin\Desktop\AdaptiveWMApp\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.acdmt.app-debug-4 C:\Users\Admin\Desktop\AdaptiveWMApp\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.acdmt.app-debug-5 C:\Users\Admin\Desktop\AdaptiveWMApp\app\src\debug\res
+com.acdmt.app-main-6 C:\Users\Admin\Desktop\AdaptiveWMApp\app\src\main\res

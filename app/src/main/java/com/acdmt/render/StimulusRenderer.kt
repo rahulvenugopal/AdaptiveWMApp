@@ -169,14 +169,14 @@ class StimulusRenderer @JvmOverloads constructor(
 
     private fun drawFixation(canvas: Canvas, geometry: Geometry) {
         textPaint.color = Color.WHITE
-        textPaint.textSize = min(geometry.screenWidth, geometry.screenHeight) * 0.055f
+        textPaint.textSize = min(geometry.screenWidth, geometry.screenHeight) * 0.11f
         drawCenteredText(canvas, "+", geometry.fixationX, geometry.fixationY, textPaint)
     }
 
     private fun drawCue(canvas: Canvas, geometry: Geometry) {
         val symbol = cueHemifield?.cueSymbol().orEmpty()
         textPaint.color = Color.WHITE
-        textPaint.textSize = min(geometry.screenWidth, geometry.screenHeight) * 0.08f
+        textPaint.textSize = min(geometry.screenWidth, geometry.screenHeight) * 0.16f
         drawCenteredText(canvas, symbol, geometry.fixationX, geometry.fixationY, textPaint)
     }
 
