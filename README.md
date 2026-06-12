@@ -2,9 +2,11 @@
 
 A native Kotlin Android application implementing a 100-trial lateralized delayed match-to-sample working memory task. This tool is built for high-precision cognitive science research, featuring staircase adjustments for set sizes and reliable in-memory trial logging.
 
-<p align="center">
-  <img src="[screenshots/Game.mp4](https://github.com/rahulvenugopal/AdaptiveWMApp/blob/master/screenshots/Game.mp4)" width="300">
-</p>
+<div align="center">
+  
+  https://github.com/user-attachments/assets/d1fafda4-7a04-4f86-8656-af68b3199605
+
+  </div>
 
 ## 🧠 Task Paradigm
 The application runs a 100-trial session encompassing the following states:
