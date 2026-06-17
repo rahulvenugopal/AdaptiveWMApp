@@ -69,6 +69,8 @@ class AcquisitionService {
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.locationWhenInUse,
+      Permission.storage,
+      Permission.manageExternalStorage,
     ].request();
   }
 

@@ -38,9 +38,21 @@ class DataCollector {
 
   Future<String> saveToCsvFile() async {
     final csvString = await exportCsvString();
-    final directory = await getApplicationDocumentsDirectory();
+    
+    Directory rootDir;
+    if (Platform.isAndroid) {
+      rootDir = Directory('/storage/emulated/0/ACDMT');
+    } else {
+      final docs = await getApplicationDocumentsDirectory();
+      rootDir = Directory('${docs.path}/ACDMT');
+    }
+
+    if (!await rootDir.exists()) {
+      await rootDir.create(recursive: true);
+    }
+
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final file = File('${directory.path}/adaptive_wm_$timestamp.csv');
+    final file = File('${rootDir.path}/adaptive_wm_$timestamp.csv');
     await file.writeAsString(csvString);
     return file.path;
   }

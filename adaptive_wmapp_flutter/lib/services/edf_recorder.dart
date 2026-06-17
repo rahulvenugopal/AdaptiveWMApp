@@ -32,10 +32,16 @@ class EdfRecorder {
     _sampleRate = sampleRate.clamp(50, 1000);
     _markerQueue.clear();
     
-    final dir = await getApplicationDocumentsDirectory();
-    final recordings = Directory('${dir.path}/recordings');
-    if (!await recordings.exists()) {
-      await recordings.create(recursive: true);
+    Directory rootDir;
+    if (Platform.isAndroid) {
+      rootDir = Directory('/storage/emulated/0/ACDMT');
+    } else {
+      final dir = await getApplicationDocumentsDirectory();
+      rootDir = Directory('${dir.path}/ACDMT');
+    }
+    
+    if (!await rootDir.exists()) {
+      await rootDir.create(recursive: true);
     }
     
     final cleanSubject = subject.trim().isEmpty
@@ -46,7 +52,7 @@ class EdfRecorder {
       '-',
     );
     
-    _path = '${recordings.path}/${cleanSubject}_$stamp.edf';
+    _path = '${rootDir.path}/${cleanSubject}_$stamp.edf';
     _writer = NativeCore.instance.openEdf(
       path: _path!,
       subject: cleanSubject,
