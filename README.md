@@ -1,17 +1,20 @@
 # Adaptive Working Memory App (Flutter)
 
-A high-precision cognitive psychological paradigm application built with **Flutter**. 
-This application measures spatial working memory capacity using a computerized change-detection task, whilst emitting time-locked synchronization markers via **Lab Streaming Layer (LSL)** for simultaneous EEG data acquisition.
+A high-precision cognitive psychological paradigm application built with **Flutter**, featuring native EEG hardware integration and raw data recording capabilities.
+
+This application measures spatial working memory capacity using a computerized change-detection task. It seamlessly connects to wireless EEG headsets (via Bluetooth/BLE) and emits time-locked synchronization markers alongside high-resolution raw EEG streams directly into standardized **.edf (European Data Format)** files. It also broadcasts these streams over the **Lab Streaming Layer (LSL)**.
 
 ---
 
 ## Key Capabilities
 
 1. **Change Detection Paradigm**: A spatial working memory task presenting arrays of red rectangles where users detect orientation changes across memory and test arrays.
-2. **Lab Streaming Layer (LSL) Integration**: Emits real-time, low-latency event markers via an LSL Outlet, allowing seamless synchronization with EEG recording systems (e.g. BrainVision, NeuroScan, openbci).
-3. **High-Precision ERP Engine**: VSYNC-locked stimulus presentation using Flutter's `CustomPaint` and timer scheduling, ensuring millisecond-level markers that match standard experimental software (e.g. PsychoPy/E-Prime).
-4. **Local Data Persistence**: Automatically logs comprehensive trial-by-trial results, reaction times, and accuracy scores into standardized `.csv` files stored securely in the app's documents directory.
-5. **Cross-Platform**: Fully supports building for Android, iOS, and Linux for field research and diverse laboratory environments.
+2. **Native EEG Hardware Integration**: Connects via Classic Bluetooth or BLE to physiological hardware (e.g., Orbit, EpiDome), streaming raw EEG samples seamlessly into the app.
+3. **Local .EDF Recording**: Fully standalone offline data collection! The app natively writes both raw EEG waveforms and synchronized experimental markers directly to standard `.edf` files using a highly optimized Rust native core.
+4. **Lab Streaming Layer (LSL) Integration**: Emits real-time, low-latency event markers via an LSL Outlet, allowing seamless synchronization with external EEG recording systems (e.g. BrainVision, NeuroScan, openbci).
+5. **High-Precision ERP Engine**: VSYNC-locked stimulus presentation using Flutter's `CustomPaint` and timer scheduling, ensuring millisecond-level markers that match standard experimental software (e.g. PsychoPy/E-Prime).
+6. **Local Data Persistence**: Automatically logs comprehensive trial-by-trial results, reaction times, and accuracy scores into standardized `.csv` files stored securely in the app's documents directory.
+7. **Cross-Platform**: Fully supports building for Android, iOS, and Linux for field research and diverse laboratory environments.
 
 ---
 
@@ -19,16 +22,17 @@ This application measures spatial working memory capacity using a computerized c
 
 ```text
 adaptive_wmapp_flutter/
-├── android/                   # Android native code (Java/Kotlin, Gradle configs)
+├── android/                   # Android native code (Java/Kotlin, JNI libs, Gradle configs)
 ├── ios/                       # iOS native code (Swift, Xcode configs)
-├── linux/                     # Linux native code (C++, CMake configs)
+├── rust/                      # Native Rust core for ultra-fast EDF writing & EEG processing
+├── third_party/               # Custom patched dependencies (e.g. flutter_bluetooth_serial)
 ├── lib/                       # Flutter Application source
 │   ├── models/                # Data models (Trial configuration, Results)
-│   ├── screens/               # App UI views (Experiment Runner, Results Screen)
-│   ├── services/              # Core business logic (Data Collector, LSL Trial Runner)
+│   ├── screens/               # App UI views (Setup Screen, Experiment Runner, Results Screen)
+│   ├── services/              # Core business logic (Acquisition, Native EDF Recorder, LSL Trial Runner)
 │   ├── widgets/               # UI components (Custom Stimulus Renderer)
 │   └── main.dart              # Application entry point
-├── pubspec.yaml               # Flutter dependencies (liblsl, csv, etc.)
+├── pubspec.yaml               # Flutter dependencies (liblsl, flutter_blue_plus, etc.)
 └── README.md                  # This document
 ```
 
@@ -36,7 +40,11 @@ adaptive_wmapp_flutter/
 
 ## Modality Specifications
 
-### 1. Lab Streaming Layer (LSL)
+### 1. Standalone EEG Recording (.edf)
+* **Rust Native Core**: The application employs a compiled Rust library (`libangel_eeg_core.so` / `.dylib`) invoked via Dart FFI. This handles high-throughput EEG sampling and marker synchronization without Dart garbage collection pauses.
+* **Outputs**: Raw multiplexed EEG data coupled exactly with the stimulus markers are saved locally as `.edf` files in the device's Documents folder.
+
+### 2. Lab Streaming Layer (LSL)
 * **LSL Outlet**: Creates a local LSL stream named `AdaptiveWM_Markers` of type `Markers`.
 * **Marker Codes**: Uses predefined integer codes to signify experimental events:
   - `88`: Fixation cross onset
@@ -47,7 +55,7 @@ adaptive_wmapp_flutter/
   - `11`: User Response (Match)
   - `12`: User Response (Omission / Timeout)
 
-### 2. CSV Data Logging
+### 3. CSV Data Logging
 * **Behavioral Records**: Each session generates a `<timestamp>_results.csv` containing:
   - `trialIndex`: Sequence number of the trial.
   - `setSize`: Memory load (number of rectangles).
@@ -63,20 +71,27 @@ adaptive_wmapp_flutter/
 
 ```mermaid
 graph TD
-    A[Main App Entry] -->|Start Experiment| B[TrialRunner Service]
+    %% Hardware layer
+    A[Wireless EEG Headset] -->|BLE / Classic BT| B(Acquisition Service)
     
-    %% Paradigm & Timing
-    B -->|Schedule Timers & VSYNC| C[StimulusRenderer Widget]
-    C -->|Draw Shapes| D[Canvas / Flutter Engine]
+    %% UI and Core
+    C[TrialRunner Service] -->|Schedule Timers & VSYNC| D[StimulusRenderer Widget]
+    D -->|Draw Shapes| E[Canvas / Flutter Engine]
     
-    %% LSL Pipeline
-    B -->|Push Event Markers| E[liblsl - C ABI Bindings]
-    E -->|Broadcast| F[Local Network / EEG Software]
+    %% Paradigm -> Data pipelines
+    C -->|Push Event Markers| F[Native EdfRecorder via FFI]
+    B -->|Stream EEG Samples| F
     
-    %% Data Collection
-    C -->|User Input| B
-    B -->|Trial Completed| G[DataCollector Service]
-    G -->|Format & Write| H[Local CSV File]
+    F -->|Write Async| G[Local .edf File]
+    
+    %% Secondary LSL Output
+    C -->|Push Event Markers| H[liblsl - C ABI Bindings]
+    H -->|Broadcast| I[Local Network / External EEG Software]
+    
+    %% Behavioral Data Collection
+    D -->|User Input| C
+    C -->|Trial Completed| J[DataCollector Service]
+    J -->|Format & Write| K[Local CSV File]
 ```
 
 ---
@@ -97,7 +112,7 @@ flutter pub get
 ```
 
 ### 3. Run and Deploy Locally
-You can run the app in debug mode on an attached device or emulator:
+You can run the app in debug mode on an attached Android tablet, iPad, or emulator:
 ```bash
 flutter run
 ```
@@ -113,17 +128,25 @@ flutter build linux --release  # Linux
 This project is configured with a GitHub Actions CI/CD pipeline (`.github/workflows/flutter_build.yml`). 
 Simply push your code to the `master` or `main` branch:
 1. GitHub will automatically provision Ubuntu and macOS runners.
-2. The pipeline will build the Android APK, Linux Executable, and iOS App Bundle in parallel.
-3. Once completed, the binaries can be downloaded directly from the **Actions** tab in your GitHub repository.
+2. It handles NDK location and custom dependency overrides robustly.
+3. The pipeline will build the Android APK, Linux Executable, and iOS App Bundle in parallel.
+4. Once completed, the binaries can be downloaded directly from the **Actions** tab in your GitHub repository.
 
 ---
 
 ## Implementation Details
 
-### LSL Marker Synchronization
-To ensure precise timing with the EEG recording, markers are dispatched using the `liblsl` FFI bindings at the exact moment the stimulus is requested to render:
+### Rust Native Integration & EDF
+The heavy lifting of file saving and real-time buffer management is fully decoupled from the UI thread by writing the core in Rust and wrapping it using `dart:ffi`. This ensures that even during demanding 120Hz UI rendering for the cognitive task, EEG samples are never dropped or delayed.
+
+### Fallback LSL Marker Synchronization
+For external synchronization, markers are dispatched using the `liblsl` FFI bindings at the exact moment the stimulus is requested to render. 
 ```dart
 void _pushMarker(int markerCode) {
+  // Local .edf file marker
+  edfRecorder.setMarker(markerCode);
+  
+  // Network LSL marker broadcast
   if (outlet != null) {
     final sample = calloc<Int32>();
     sample.value = markerCode;
@@ -132,6 +155,3 @@ void _pushMarker(int markerCode) {
   }
 }
 ```
-
-### Local CSV Writing
-The `DataCollector` uses the `csv` package to dynamically generate and append rows to a CSV file stored in the platform's standard application documents directory (`path_provider`). This prevents data loss in case of an unexpected crash during long recording sessions.
