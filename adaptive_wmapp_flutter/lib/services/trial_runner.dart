@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:liblsl/lsl.dart';
 import '../models/experiment_models.dart';
 import 'data_collector.dart';
+import 'edf_recorder.dart';
 
 class TrialRunner extends ChangeNotifier {
   final DataCollector dataCollector;
+  final EdfRecorder edfRecorder;
   final Random _random = Random();
   
   LSLStreamInfo? _streamInfo;
@@ -23,7 +25,7 @@ class TrialRunner extends ChangeNotifier {
   Completer<MatchDecision>? _responseCompleter;
   int _retrievalOnsetMs = 0;
 
-  TrialRunner(this.dataCollector) {
+  TrialRunner(this.dataCollector, this.edfRecorder) {
     _initLsl();
   }
 
@@ -49,6 +51,7 @@ class TrialRunner extends ChangeNotifier {
       if (_outlet != null) {
         _outlet!.pushSample([marker]);
       }
+      edfRecorder.setMarker(marker);
     } catch (e) {
       debugPrint("Failed to push LSL marker $marker: $e");
     }

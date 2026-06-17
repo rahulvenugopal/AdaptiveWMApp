@@ -1,0 +1,11 @@
+[package]
+name = "angel_eeg_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "angel_eeg_core"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+# No external dependencies required for EDF writing, ensuring a lightweight binary footprint
