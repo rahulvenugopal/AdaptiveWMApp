@@ -21,6 +21,11 @@ jobs:
         with:
           channel: 'stable'
           
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          
       - name: Install Flutter Dependencies
         working-directory: ./adaptive_wmapp_flutter
         run: flutter pub get
