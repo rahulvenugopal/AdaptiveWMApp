@@ -76,8 +76,13 @@ void main(List<String> args) async {
         input.config.code.targetArchitecture;
 
     logger.info('Searching for android NDK...');
-    final ndkPaths = await NDKLocator.locate();
-    final ndk = ndkPaths.forBuildConfig(input.config);
+    var ndkPaths;
+    try {
+      ndkPaths = await NDKLocator.locate();
+    } catch(e) {
+      logger.info('Failed to locate NDK via locator: $e');
+    }
+    final ndk = ndkPaths?.forBuildConfig(input.config);
     final libcppSharedPath = ndk == null
         ? _libcppFromCompiler(input, logger)
         : ndk.hostArchitectures.first.targetArchitectures.first.sysrootLibPath
