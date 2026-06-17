@@ -18,6 +18,17 @@ This application measures spatial working memory capacity using a computerized c
 
 ---
 
+## 📥 Downloads & Installables
+Pre-compiled binaries for all supported operating systems are automatically generated via GitHub Actions on every commit.
+
+* 📱 **[Android APK](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the latest `Android-APK.zip` from the artifacts section to install directly on any Android device.
+* 🍏 **[iOS App Bundle](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `iOS-Build.zip` artifact. (Requires Xcode/macOS for device provisioning).
+* 🐧 **[Linux Executable](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `Linux-Build.zip` for Debian-based systems.
+
+> **Note:** To access these files, click on the most recent successful run in the [GitHub Actions tab](https://github.com/rahulvenugopal/AdaptiveWMApp/actions), scroll to the bottom, and click on the desired artifact under "Artifacts".
+
+---
+
 ## Directory Structure
 
 ```text
