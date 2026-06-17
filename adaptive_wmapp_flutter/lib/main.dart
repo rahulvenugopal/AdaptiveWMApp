@@ -8,17 +8,17 @@ import 'screens/setup_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AdaptiveWMApp());
+  runApp(const AcdmtApp());
 }
 
-class AdaptiveWMApp extends StatefulWidget {
-  const AdaptiveWMApp({super.key});
+class AcdmtApp extends StatefulWidget {
+  const AcdmtApp({super.key});
 
   @override
-  State<AdaptiveWMApp> createState() => _AdaptiveWMAppState();
+  State<AcdmtApp> createState() => _AcdmtAppState();
 }
 
-class _AdaptiveWMAppState extends State<AdaptiveWMApp> {
+class _AcdmtAppState extends State<AcdmtApp> {
   final _acqService = AcquisitionService();
   final _edfRecorder = EdfRecorder();
 
@@ -52,7 +52,7 @@ class _AdaptiveWMAppState extends State<AdaptiveWMApp> {
         ),
       ],
       child: MaterialApp(
-        title: 'Adaptive WM App',
+        title: 'ACDMT',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,

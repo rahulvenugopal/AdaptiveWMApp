@@ -1,4 +1,4 @@
-# Adaptive Working Memory App (Flutter)
+# Adaptive Change Detection Memory Task (ACDMT)
 
 A high-precision cognitive psychological paradigm application built with **Flutter**, featuring native EEG hardware integration and raw data recording capabilities.
 

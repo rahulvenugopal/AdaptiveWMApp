@@ -32,7 +32,7 @@ class TrialRunner extends ChangeNotifier {
   void _initLsl() async {
     try {
       _streamInfo = LSLStreamInfo(
-        streamName: 'AdaptiveWM_Markers',
+        streamName: 'ACDMT_Markers',
         streamType: LSLContentType.markers,
         channelCount: 1,
         sampleRate: 0.0,
