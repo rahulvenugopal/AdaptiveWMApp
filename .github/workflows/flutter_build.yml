@@ -1,0 +1,71 @@
+name: Flutter Autobuild
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-android-linux:
+    name: Build Android & Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Linux Build Dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+        
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Install Flutter Dependencies
+        working-directory: ./adaptive_wmapp_flutter
+        run: flutter pub get
+        
+      - name: Build Android APK
+        working-directory: ./adaptive_wmapp_flutter
+        run: flutter build apk --release
+        
+      - name: Build Linux
+        working-directory: ./adaptive_wmapp_flutter
+        run: flutter build linux --release
+        
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: Android-APK
+          path: adaptive_wmapp_flutter/build/app/outputs/flutter-apk/app-release.apk
+          
+      - name: Upload Linux Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: Linux-Build
+          path: adaptive_wmapp_flutter/build/linux/x64/release/bundle/
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Install Flutter Dependencies
+        working-directory: ./adaptive_wmapp_flutter
+        run: flutter pub get
+        
+      - name: Build iOS (No Sign)
+        working-directory: ./adaptive_wmapp_flutter
+        run: flutter build ios --release --no-codesign
+        
+      - name: Upload iOS Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: iOS-Build
+          path: adaptive_wmapp_flutter/build/ios/iphoneos/
