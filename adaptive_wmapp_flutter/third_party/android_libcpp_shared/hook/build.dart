@@ -88,9 +88,8 @@ void main(List<String> args) async {
         : ndk.hostArchitectures.first.targetArchitectures.first.sysrootLibPath
               .resolve('libc++_shared.so');
     if (libcppSharedPath == null) {
-      throw StateError(
-        'No suitable NDK found for target architecture $targetArchitecture.',
-      );
+      logger.warning('No suitable NDK found for target architecture $targetArchitecture. Skipping libc++_shared.so bundling.');
+      return;
     }
     if (ndk != null) {
       logger.info('Found NDK at ${ndk.path}, version ${ndk.version}.');
