@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/acquisition_service.dart';
 import '../services/edf_recorder.dart';
-import 'experiment_screen.dart';
+import 'config_screen.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -51,7 +51,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const ExperimentScreen()),
+        MaterialPageRoute(builder: (_) => const ConfigScreen()),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

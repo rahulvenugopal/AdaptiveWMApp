@@ -4,7 +4,7 @@ enum Hemifield {
   left,
   right;
 
-  String cueSymbol() => this == Hemifield.left ? "<" : ">";
+  String cueSymbol() => this == Hemifield.left ? "←" : "→";
 }
 
 enum TrialPhase {

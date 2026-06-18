@@ -25,6 +25,11 @@ class TrialRunner extends ChangeNotifier {
   Completer<MatchDecision>? _responseCompleter;
   int _retrievalOnsetMs = 0;
 
+  int fixationDurationMs = 500;
+  int cueDurationMs = 300;
+  int encodingDurationMs = 300;
+  int delayDurationMs = 1000;
+
   TrialRunner(this.dataCollector, this.edfRecorder) {
     _initLsl();
   }
@@ -72,6 +77,7 @@ class TrialRunner extends ChangeNotifier {
 
     _transitionTo(TrialPhase.finished, null);
     await dataCollector.saveToCsvFile();
+    await edfRecorder.stop();
     _isRunning = false;
   }
 
@@ -93,18 +99,18 @@ class TrialRunner extends ChangeNotifier {
 
     _pushMarker(88); // Fixation marker
     _transitionTo(TrialPhase.fixation, trial);
-    await _delay(500);
+    await _delay(fixationDurationMs);
 
     _transitionTo(TrialPhase.cue, trial);
-    await _delay(300);
+    await _delay(cueDurationMs);
 
     final encodingMarker = (trial.setSize * 10) + (trial.cuedHemifield == Hemifield.left ? 1 : 9);
     _pushMarker(encodingMarker);
     _transitionTo(TrialPhase.encoding, trial);
-    await _delay(300);
+    await _delay(encodingDurationMs);
 
     _transitionTo(TrialPhase.maintenance, trial);
-    await _delay(1000);
+    await _delay(delayDurationMs);
 
     final response = await _runRetrieval(trial);
     final userDecision = response ?? MatchDecision.noResponse;

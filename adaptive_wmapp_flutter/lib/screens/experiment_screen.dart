@@ -82,8 +82,7 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                   right: 0,
                   child: Container(
                     color: const Color.fromARGB(210, 33, 33, 36),
-                    padding: const EdgeInsets.all(16),
-                    height: 100,
+                    padding: const EdgeInsets.all(24),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -91,19 +90,21 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color.fromARGB(255, 52, 143, 80),
+                              padding: const EdgeInsets.symmetric(vertical: 24),
                             ),
                             onPressed: () => runner.submitResponse(MatchDecision.match),
-                            child: const Text("Match", style: TextStyle(color: Colors.white, fontSize: 18)),
+                            child: const Text("Match", style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 24),
                         Expanded(
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color.fromARGB(255, 181, 61, 55),
+                              padding: const EdgeInsets.symmetric(vertical: 24),
                             ),
                             onPressed: () => runner.submitResponse(MatchDecision.mismatch),
-                            child: const Text("Mismatch", style: TextStyle(color: Colors.white, fontSize: 18)),
+                            child: const Text("Mismatch", style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
