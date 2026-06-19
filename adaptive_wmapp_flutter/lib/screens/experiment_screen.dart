@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/experiment_models.dart';
@@ -75,6 +76,42 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                 currentTrial: runner.currentTrial,
                 cueHemifield: runner.currentCue,
               ),
+              if (runner.isRunning)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B).withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.timer_outlined,
+                          size: 16,
+                          color: Color(0xFF60A5FA),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${(runner.elapsedSeconds ~/ 60).toString().padLeft(2, '0')}:'
+                          '${(runner.elapsedSeconds % 60).toString().padLeft(2, '0')}',
+                          style: const TextStyle(
+                            color: Color(0xFF60A5FA),
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (runner.currentPhase == TrialPhase.retrieval)
                 Positioned(
                   bottom: 0,
@@ -89,25 +126,117 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                         Expanded(
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color.fromARGB(255, 52, 143, 80),
+                              backgroundColor: const Color.fromARGB(
+                                255,
+                                52,
+                                143,
+                                80,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 24),
                             ),
-                            onPressed: () => runner.submitResponse(MatchDecision.match),
-                            child: const Text("Match", style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                            onPressed: () =>
+                                runner.submitResponse(MatchDecision.match),
+                            child: const Text(
+                              "Match",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color.fromARGB(255, 181, 61, 55),
+                              backgroundColor: const Color.fromARGB(
+                                255,
+                                181,
+                                61,
+                                55,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 24),
                             ),
-                            onPressed: () => runner.submitResponse(MatchDecision.mismatch),
-                            child: const Text("Mismatch", style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                            onPressed: () =>
+                                runner.submitResponse(MatchDecision.mismatch),
+                            child: const Text(
+                              "Mismatch",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              if (runner.isPaused)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withOpacity(0.6),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                      child: Center(
+                        child: Card(
+                          color: const Color(0xFF1E293B),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: const BorderSide(color: Colors.white12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 40,
+                              vertical: 30,
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF14B8A6),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                const Text(
+                                  "EEG Connection Lost",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  "EEG disconnected – waiting for reconnect…",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                  onPressed: () {
+                                    runner.stop();
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: const Text(
+                                    "Cancel Experiment",
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

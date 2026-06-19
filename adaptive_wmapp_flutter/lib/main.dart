@@ -3,8 +3,11 @@ import 'package:provider/provider.dart';
 import 'services/data_collector.dart';
 import 'services/trial_runner.dart';
 import 'services/acquisition_service.dart';
+import 'services/lsl_eeg_acquisition_service.dart';
 import 'services/edf_recorder.dart';
 import 'screens/setup_screen.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +24,7 @@ class AcdmtApp extends StatefulWidget {
 class _AcdmtAppState extends State<AcdmtApp> {
   final _acqService = AcquisitionService();
   final _edfRecorder = EdfRecorder();
+  final _lslEegService = LslEegAcquisitionService();
 
   @override
   void initState() {
@@ -31,11 +35,45 @@ class _AcdmtAppState extends State<AcdmtApp> {
         _edfRecorder.push(sample);
       }
     });
+    _lslEegService.samples.listen((sample) {
+      if (_edfRecorder.isRecording) {
+        _edfRecorder.push(sample);
+      }
+    });
+
+    _acqService.state.listen((state) {
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        try {
+          final runner = Provider.of<TrialRunner>(context, listen: false);
+          if (state == AcquisitionState.disconnected && !runner.isPaused) {
+            runner.pause();
+          } else if (state == AcquisitionState.streaming && runner.isPaused) {
+            runner.resume();
+          }
+        } catch (_) {}
+      }
+    });
+
+    _lslEegService.state.listen((state) {
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        try {
+          final runner = Provider.of<TrialRunner>(context, listen: false);
+          if (state == AcquisitionState.disconnected && !runner.isPaused) {
+            runner.pause();
+          } else if (state == AcquisitionState.streaming && runner.isPaused) {
+            runner.resume();
+          }
+        } catch (_) {}
+      }
+    });
   }
 
   @override
   void dispose() {
     _acqService.dispose();
+    _lslEegService.disconnect();
     super.dispose();
   }
 
@@ -44,6 +82,7 @@ class _AcdmtAppState extends State<AcdmtApp> {
     return MultiProvider(
       providers: [
         Provider<AcquisitionService>.value(value: _acqService),
+        Provider<LslEegAcquisitionService>.value(value: _lslEegService),
         Provider<EdfRecorder>.value(value: _edfRecorder),
         Provider<DataCollector>(create: (_) => DataCollector()),
         ChangeNotifierProxyProvider2<DataCollector, EdfRecorder, TrialRunner>(
@@ -54,6 +93,7 @@ class _AcdmtAppState extends State<AcdmtApp> {
       child: MaterialApp(
         title: 'ACDMT',
         debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
         theme: ThemeData(
           brightness: Brightness.dark,
           primarySwatch: Colors.blue,

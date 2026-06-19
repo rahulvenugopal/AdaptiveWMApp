@@ -39,6 +39,30 @@ class EegDevice {
 }
 
 class AcquisitionService {
+  String orbitPrefix = 'ORBIT_';
+  String xampPrefix = 'AXXSPU00003';
+
+  static const String _nordicUartServiceUuid =
+      '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  static const String _nordicUartRxUuid =
+      '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+  static const String _nordicUartTxUuid =
+      '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+  static const String _hm10ServiceUuid = 'ffe0';
+  static const String _hm10DataUuid = 'ffe1';
+  static const String _tiDataStreamServiceUuid =
+      'f000c0c0-0451-4000-b000-000000000000';
+  static const String _tiDataStreamWriteUuid =
+      'f000c0c1-0451-4000-b000-000000000000';
+  static const String _tiDataStreamNotifyUuid =
+      'f000c0c2-0451-4000-b000-000000000000';
+  static const int _epidomeFrameHeader = 0xAA;
+  static const int _epidomeFrameHeaderLength = 3;
+  static const int _epidomeChannelCount = 16;
+  static const int _epidomeFrameLength =
+      _epidomeFrameHeaderLength + _epidomeChannelCount * 3;
+  static const double _ads1299UvPerCount = -0.0224;
+
   final _state = StreamController<AcquisitionState>.broadcast();
   final _samples = StreamController<EegSample>.broadcast();
   final _devices = StreamController<List<EegDevice>>.broadcast();
@@ -54,6 +78,17 @@ class AcquisitionService {
   StreamSubscription<List<ble.ScanResult>>? _bleScanSub;
   StreamSubscription<Uint8List>? _classicInputSub;
   StreamSubscription<List<int>>? _bleNotifySub;
+  StreamSubscription<ble.BluetoothConnectionState>? _bleConnectionStateSub;
+
+  // Reconnect settings and state
+  int reconnectMaxAttempts = 10;
+  int _reconnectAttempts = 0;
+  EegDevice? _lastConnectedDevice;
+  bool _autoReconnectEnabled = false;
+  Timer? _reconnectTimer;
+  final _maxRetriesReachedController = StreamController<void>.broadcast();
+
+  Stream<void> get maxRetriesReached => _maxRetriesReachedController.stream;
   classic.BluetoothConnection? _classicConnection;
   ble.BluetoothDevice? _bleDevice;
   Timer? _syntheticTimer;
@@ -63,6 +98,19 @@ class AcquisitionService {
   Stream<EegSample> get samples => _samples.stream;
   Stream<List<EegDevice>> get devices => _devices.stream;
   AcquisitionState get currentState => _currentState;
+
+  int get channelCount {
+    if (_lastConnectedDevice == null) return 0;
+    if (_lastConnectedDevice!.kind == DeviceKind.orbit) return 2;
+    return 16;
+  }
+
+  double get sampleRate {
+    if (_lastConnectedDevice == null) return 0.0;
+    return 250.0;
+  }
+
+  String? get connectedDeviceName => _lastConnectedDevice?.name;
 
   Future<void> requestPermissions() async {
     await [
@@ -84,13 +132,17 @@ class AcquisitionService {
     try {
       final systemDevices = await ble.FlutterBluePlus.systemDevices([]);
       for (final device in systemDevices) {
-        final name = device.platformName.isNotEmpty ? device.platformName : 'Connected BLE device';
-        _addDevice(EegDevice(
-          name: name,
-          id: device.remoteId.toString(),
-          kind: _kindForName(name),
-          isBle: true,
-        ));
+        final name = device.platformName.isNotEmpty
+            ? device.platformName
+            : 'Connected BLE device';
+        _addDevice(
+          EegDevice(
+            name: name,
+            id: device.remoteId.toString(),
+            kind: _kindForName(name),
+            isBle: true,
+          ),
+        );
       }
     } catch (e) {
       debugPrint('[BLE systemDevices scan error] $e');
@@ -119,11 +171,13 @@ class AcquisitionService {
         _classicScanSub = classic.FlutterBluetoothSerial.instance
             .startDiscovery()
             .listen((result) {
+              final name = result.device.name ?? 'Unknown classic device';
+              if (_matchesXampPrefix(name)) return;
               _addDevice(
                 EegDevice(
-                  name: result.device.name ?? 'Unknown classic device',
+                  name: name,
                   id: result.device.address,
-                  kind: _kindForName(result.device.name ?? ''),
+                  kind: _kindForName(name),
                   isBle: false,
                 ),
               );
@@ -170,18 +224,32 @@ class AcquisitionService {
     await disconnect();
     _setState(AcquisitionState.connecting);
 
-    if (device.kind == DeviceKind.synthetic) {
-      _startSynthetic();
-      return;
-    }
-    if (device.isBle) {
-      await _connectBle(device);
-    } else {
-      await _connectClassic(device);
+    try {
+      if (device.kind == DeviceKind.synthetic) {
+        _startSynthetic();
+      } else if (device.isBle) {
+        await _connectBle(device);
+      } else {
+        await _connectClassic(device);
+      }
+      _lastConnectedDevice = device;
+      _autoReconnectEnabled = true;
+      _reconnectAttempts = 0;
+    } catch (e) {
+      _setState(AcquisitionState.disconnected);
+      rethrow;
     }
   }
 
   Future<void> disconnect() async {
+    _autoReconnectEnabled = false;
+    _reconnectAttempts = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
+    await _bleConnectionStateSub?.cancel();
+    _bleConnectionStateSub = null;
+
     _syntheticTimer?.cancel();
     _syntheticTimer = null;
     await _classicInputSub?.cancel();
@@ -201,6 +269,49 @@ class AcquisitionService {
     _state.close();
     _samples.close();
     _devices.close();
+    _maxRetriesReachedController.close();
+  }
+
+  void _handleUnexpectedDisconnect() {
+    if (!_autoReconnectEnabled || _currentState != AcquisitionState.streaming) {
+      return;
+    }
+    debugPrint('[AcquisitionService] Unexpected disconnect detected!');
+    _setState(AcquisitionState.disconnected);
+    _startReconnectTimer();
+  }
+
+  void _startReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      _reconnectAttempts++;
+      if (reconnectMaxAttempts > 0 && _reconnectAttempts > reconnectMaxAttempts) {
+        _stopReconnectTimer();
+        _maxRetriesReachedController.add(null);
+        return;
+      }
+      if (_lastConnectedDevice == null || !_autoReconnectEnabled) {
+        _stopReconnectTimer();
+        return;
+      }
+
+      debugPrint('[AcquisitionService] Auto-reconnect attempt $_reconnectAttempts'
+          '${reconnectMaxAttempts > 0 ? '/$reconnectMaxAttempts' : ''}: '
+          'connecting to ${_lastConnectedDevice!.name}');
+
+      try {
+        await connect(_lastConnectedDevice!);
+        debugPrint('[AcquisitionService] Auto-reconnect successful!');
+      } catch (e) {
+        debugPrint('[AcquisitionService] Auto-reconnect failed: $e');
+        _setState(AcquisitionState.disconnected);
+      }
+    });
+  }
+
+  void _stopReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
   }
 
   void addSyntheticDevice() {
@@ -216,39 +327,56 @@ class AcquisitionService {
 
   Future<void> _connectClassic(EegDevice device) async {
     _classicConnection = await classic.BluetoothConnection.toAddress(device.id);
-    _classicInputSub = _classicConnection!.input?.listen((data) {
-      if (device.kind == DeviceKind.epidome) {
-        _parseEpiDomeBytes(data);
-      } else {
-        _parseAsciiOrbit(data);
-      }
-    });
+    _classicInputSub = _classicConnection!.input?.listen(
+      (data) {
+        if (device.kind == DeviceKind.epidome) {
+          _parseEpiDomeBytes(data);
+        } else {
+          _parseAsciiOrbit(data);
+        }
+      },
+      onDone: () => _handleUnexpectedDisconnect(),
+      onError: (e) => _handleUnexpectedDisconnect(),
+    );
     _setState(AcquisitionState.streaming);
   }
 
   Future<void> _connectBle(EegDevice device) async {
     _bleDevice = ble.BluetoothDevice.fromId(device.id);
+
+    await _bleConnectionStateSub?.cancel();
+    _bleConnectionStateSub = _bleDevice!.connectionState.listen((connectionState) {
+      if (connectionState == ble.BluetoothConnectionState.disconnected) {
+        _handleUnexpectedDisconnect();
+      }
+    });
+
     await _bleDevice!.connect(
       license: ble.License.nonprofit,
       timeout: const Duration(seconds: 12),
       autoConnect: false,
     );
+    try {
+      await _bleDevice!.requestMtu(247, predelay: 0);
+    } catch (error) {
+      debugPrint('[BLE Bluetooth] MTU request skipped/failed: $error');
+    }
     final services = await _bleDevice!.discoverServices();
     final characteristics = services
         .expand((service) => service.characteristics)
         .toList();
-    
+
     final pair = device.kind == DeviceKind.epidome
         ? _selectEpiDomeCharacteristics(characteristics)
         : _selectOrbitCharacteristics(characteristics);
     final notify = pair?.notify;
     final write = pair?.write;
-    
+
     if (notify == null) {
       throw StateError('No BLE notify characteristic found for ${device.name}');
     }
     await notify.setNotifyValue(true);
-    
+
     if (write != null) {
       final command = device.kind == DeviceKind.epidome
           ? [0x72, 0x78, 0x73, 0x37]
@@ -257,51 +385,73 @@ class AcquisitionService {
           write.properties.writeWithoutResponse && !write.properties.write;
       await write.write(command, withoutResponse: withoutResponse);
     }
-    
-    _bleNotifySub = notify.onValueReceived.listen((data) {
-      if (device.kind == DeviceKind.epidome) {
-        _parseEpiDomeBytes(Uint8List.fromList(data), bleSource: true);
-      } else {
-        _parseOrbitBleBytes(data);
-      }
-    });
+
+    _bleNotifySub = notify.onValueReceived.listen(
+      (data) {
+        if (device.kind == DeviceKind.epidome) {
+          _parseEpiDomeBytes(Uint8List.fromList(data), bleSource: true);
+        } else {
+          _parseOrbitBleBytes(data);
+        }
+      },
+      onError: (e) => _handleUnexpectedDisconnect(),
+      onDone: () => _handleUnexpectedDisconnect(),
+    );
     _setState(AcquisitionState.streaming);
   }
 
   void _parseEpiDomeBytes(Uint8List data, {bool bleSource = false}) {
     final buffer = bleSource ? _bleBuffer : _classicBuffer;
     buffer.addAll(data);
-    const header = 0xAA;
-    const frameLength = 51;
-    while (buffer.length >= frameLength) {
-      final start = buffer.indexOf(header);
+    while (buffer.length >= _epidomeFrameHeaderLength) {
+      final start = _findEpiDomeFrameHeader(buffer);
       if (start < 0) {
+        final keepTrailing = buffer.reversed
+            .takeWhile((byte) => byte == _epidomeFrameHeader)
+            .length
+            .clamp(0, _epidomeFrameHeaderLength - 1);
+        final trailing = keepTrailing == 0
+            ? const <int>[]
+            : buffer.sublist(buffer.length - keepTrailing);
         buffer.clear();
+        buffer.addAll(trailing);
         return;
       }
       if (start > 0) {
         buffer.removeRange(0, start);
       }
-      if (buffer.length < frameLength) return;
-      final payload = buffer.sublist(3, frameLength);
-      final channels = <double>[];
-      for (var i = 0; i + 2 < payload.length && channels.length < 16; i += 3) {
-        var raw = payload[i] | (payload[i + 1] << 8) | (payload[i + 2] << 16);
+      if (buffer.length < _epidomeFrameLength) return;
+      final channels = List<double>.filled(_epidomeChannelCount, 0.0);
+      for (var i = 0; i < _epidomeChannelCount; i++) {
+        final offset = _epidomeFrameHeaderLength + i * 3;
+        var raw =
+            (buffer[offset] << 16) |
+            (buffer[offset + 1] << 8) |
+            buffer[offset + 2];
         if ((raw & 0x800000) != 0) raw -= 0x1000000;
-        channels.add(raw * -0.0224);
+        channels[i] = raw * _ads1299UvPerCount;
       }
-      buffer.removeRange(0, frameLength);
-      if (channels.isNotEmpty) {
-        _samples.add(
-          EegSample(
-            channels: channels,
-            sampleRate: 250,
-            timestamp: DateTime.now(),
-            source: 'EpiDome/xAMP-L10',
-          ),
-        );
+      buffer.removeRange(0, _epidomeFrameLength);
+      _samples.add(
+        EegSample(
+          channels: channels,
+          sampleRate: 250,
+          timestamp: DateTime.now(),
+          source: 'EpiDome/xAMP-L10',
+        ),
+      );
+    }
+  }
+
+  int _findEpiDomeFrameHeader(List<int> buffer) {
+    for (var i = 0; i <= buffer.length - _epidomeFrameHeaderLength; i++) {
+      if (buffer[i] == _epidomeFrameHeader &&
+          buffer[i + 1] == _epidomeFrameHeader &&
+          buffer[i + 2] == _epidomeFrameHeader) {
+        return i;
       }
     }
+    return -1;
   }
 
   void _parseAsciiOrbit(Uint8List data, {bool bleSource = false}) {
@@ -378,22 +528,62 @@ class AcquisitionService {
   _selectEpiDomeCharacteristics(
     List<ble.BluetoothCharacteristic> characteristics,
   ) {
+    bool canWrite(ble.BluetoothCharacteristic c) =>
+        c.properties.write || c.properties.writeWithoutResponse;
+    bool canNotify(ble.BluetoothCharacteristic c) =>
+        c.properties.notify || c.properties.indicate;
+
     ble.BluetoothCharacteristic? find(String suffix) {
+      final target = suffix.toLowerCase();
       for (final characteristic in characteristics) {
-        if (characteristic.characteristicUuid.toString().toLowerCase().contains(
-          suffix,
-        )) {
+        final uuid = characteristic.characteristicUuid.toString().toLowerCase();
+        if (uuid == target || uuid.endsWith('-$target')) {
           return characteristic;
         }
       }
       return null;
     }
 
-    final write = find('f000c0c1-0451-4000-b000-000000000000');
-    final notify = find('f000c0c2-0451-4000-b000-000000000000');
-    if (write != null && notify != null) {
+    final nordicWrite = find(_nordicUartRxUuid);
+    final nordicNotify = find(_nordicUartTxUuid);
+    if (nordicWrite != null &&
+        nordicNotify != null &&
+        canWrite(nordicWrite) &&
+        canNotify(nordicNotify)) {
+      return (write: nordicWrite, notify: nordicNotify);
+    }
+
+    final hm10Data = find(_hm10DataUuid);
+    if (hm10Data != null && canWrite(hm10Data) && canNotify(hm10Data)) {
+      return (write: hm10Data, notify: hm10Data);
+    }
+
+    final write = find(_tiDataStreamWriteUuid);
+    final notify = find(_tiDataStreamNotifyUuid);
+    if (write != null &&
+        notify != null &&
+        canWrite(write) &&
+        canNotify(notify)) {
       return (write: write, notify: notify);
     }
+
+    for (final serviceUuid in [
+      _nordicUartServiceUuid,
+      _hm10ServiceUuid,
+      _tiDataStreamServiceUuid,
+    ]) {
+      final serviceChars = characteristics.where((c) {
+        final uuid = c.serviceUuid.toString().toLowerCase();
+        return uuid == serviceUuid || uuid.endsWith('-$serviceUuid');
+      }).toList();
+      if (serviceChars.isEmpty) continue;
+      final serviceWrite = serviceChars.where(canWrite).firstOrNull;
+      final serviceNotify = serviceChars.where(canNotify).firstOrNull;
+      if (serviceWrite != null && serviceNotify != null) {
+        return (write: serviceWrite, notify: serviceNotify);
+      }
+    }
+
     return _selectNonStandardPair(characteristics);
   }
 
@@ -442,8 +632,8 @@ class AcquisitionService {
       final stageCycle = (_syntheticT / 30).floor() % 4;
       final baseFreq = switch (stageCycle) {
         0 => 10.0, // Alpha
-        1 => 6.0,  // Theta
-        2 => 2.0,  // Delta
+        1 => 6.0, // Theta
+        2 => 2.0, // Delta
         _ => 14.0, // Beta
       };
       final amp = stageCycle == 2 ? 80.0 : 30.0;
@@ -465,8 +655,11 @@ class AcquisitionService {
 
   DeviceKind _kindForName(String name) {
     final upper = name.toUpperCase();
-    if (upper.contains('ORBIT')) return DeviceKind.orbit;
-    if (upper.contains('EPIDOME') ||
+    if (orbitPrefix.isNotEmpty && upper.startsWith(orbitPrefix.toUpperCase())) {
+      return DeviceKind.orbit;
+    }
+    if (_matchesXampPrefix(name) ||
+        upper.contains('EPIDOME') ||
         upper.contains('XAMP') ||
         upper.contains('AXXSPU')) {
       return DeviceKind.epidome;
@@ -475,35 +668,24 @@ class AcquisitionService {
   }
 
   void _addDevice(EegDevice device) {
-    // If the device is an EEG device (ORBIT_ or AXXSPU/EPIDOME/xAMP), force isBle to true
-    final nameUpper = device.name.toUpperCase();
-    final isEegDevice = nameUpper.contains('ORBIT') ||
-                        nameUpper.contains('EPIDOME') ||
-                        nameUpper.contains('XAMP') ||
-                        nameUpper.contains('AXXSPU');
-    
-    final normalizedDevice = isEegDevice
-        ? EegDevice(
-            name: device.name,
-            id: device.id,
-            kind: device.kind,
-            isBle: true,
-          )
-        : device;
-
-    final existing = _seenDevices.indexWhere((entry) => entry.id == normalizedDevice.id);
+    final existing = _seenDevices.indexWhere((entry) => entry.id == device.id);
     if (existing >= 0) {
       final existingDevice = _seenDevices[existing];
-      // Do not allow a classic scan result to downgrade an already discovered BLE device
-      if (existingDevice.isBle && !normalizedDevice.isBle) {
+      if (existingDevice.isBle && !device.isBle) {
         return;
       }
-      _seenDevices[existing] = normalizedDevice;
+      _seenDevices[existing] = device;
     } else {
-      _seenDevices.add(normalizedDevice);
-      debugPrint('[Bluetooth scan] Added device ${normalizedDevice.name} (${normalizedDevice.id})');
+      _seenDevices.add(device);
+      debugPrint('[Bluetooth scan] Added device ${device.name} (${device.id})');
     }
     _publishDevices();
+  }
+
+  bool _matchesXampPrefix(String name) {
+    final prefix = xampPrefix.trim().toUpperCase();
+    if (prefix.isEmpty) return false;
+    return name.toUpperCase().startsWith(prefix);
   }
 
   void _publishDevices() {

@@ -10,7 +10,7 @@ class TrialRunner extends ChangeNotifier {
   final DataCollector dataCollector;
   final EdfRecorder edfRecorder;
   final Random _random = Random();
-  
+
   LSLStreamInfo? _streamInfo;
   LSLOutlet? _outlet;
 
@@ -18,10 +18,32 @@ class TrialRunner extends ChangeNotifier {
   int currentSetSize = 2;
   int _consecutiveCorrect = 0;
   bool _isRunning = false;
-  
+  bool _paused = false;
+  Completer<void>? _resumeCompleter;
+  Timer? _elapsedTimer;
+  int elapsedSeconds = 0;
+
+  bool get isPaused => _paused;
+  bool get isRunning => _isRunning;
+
+  void pause() {
+    if (!_isRunning || _paused) return;
+    _paused = true;
+    _resumeCompleter = Completer<void>();
+    notifyListeners();
+  }
+
+  void resume() {
+    if (!_isRunning || !_paused) return;
+    _paused = false;
+    _resumeCompleter?.complete();
+    _resumeCompleter = null;
+    notifyListeners();
+  }
+
   TrialPlan? currentTrial;
   Hemifield? currentCue;
-  
+
   Completer<MatchDecision>? _responseCompleter;
   int _retrievalOnsetMs = 0;
 
@@ -42,7 +64,7 @@ class TrialRunner extends ChangeNotifier {
         channelCount: 1,
         sampleRate: 0.0,
         channelFormat: LSLChannelFormat.int32,
-        sourceId: 'awm_uid'
+        sourceId: 'awm_uid',
       );
       _outlet = LSLOutlet(_streamInfo!);
       await _outlet!.create();
@@ -65,6 +87,14 @@ class TrialRunner extends ChangeNotifier {
   Future<void> start() async {
     if (_isRunning) return;
     _isRunning = true;
+    elapsedSeconds = 0;
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_isRunning && !_paused) {
+        elapsedSeconds++;
+        notifyListeners();
+      }
+    });
     dataCollector.clear();
     currentSetSize = 2;
     _consecutiveCorrect = 0;
@@ -79,17 +109,26 @@ class TrialRunner extends ChangeNotifier {
     await dataCollector.saveToCsvFile();
     await edfRecorder.stop();
     _isRunning = false;
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+    notifyListeners();
   }
 
   void stop() {
     _isRunning = false;
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
     _responseCompleter?.complete(MatchDecision.noResponse);
+    notifyListeners();
   }
 
   void submitResponse(MatchDecision decision) {
     if (decision == MatchDecision.noResponse) return;
-    if (currentPhase != TrialPhase.retrieval || _responseCompleter == null || _responseCompleter!.isCompleted) return;
-    
+    if (currentPhase != TrialPhase.retrieval ||
+        _responseCompleter == null ||
+        _responseCompleter!.isCompleted)
+      return;
+
     _responseCompleter!.complete(decision);
   }
 
@@ -104,7 +143,8 @@ class TrialRunner extends ChangeNotifier {
     _transitionTo(TrialPhase.cue, trial);
     await _delay(cueDurationMs);
 
-    final encodingMarker = (trial.setSize * 10) + (trial.cuedHemifield == Hemifield.left ? 1 : 9);
+    final encodingMarker =
+        (trial.setSize * 10) + (trial.cuedHemifield == Hemifield.left ? 1 : 9);
     _pushMarker(encodingMarker);
     _transitionTo(TrialPhase.encoding, trial);
     await _delay(encodingDurationMs);
@@ -114,15 +154,19 @@ class TrialRunner extends ChangeNotifier {
 
     final response = await _runRetrieval(trial);
     final userDecision = response ?? MatchDecision.noResponse;
-    
+
     int responseMarker = 12; // omission
-    if (userDecision == MatchDecision.match) responseMarker = 11;
-    if (userDecision == MatchDecision.mismatch) responseMarker = 10;
+    if (userDecision == MatchDecision.match) {
+      responseMarker = 11;
+    }
+    if (userDecision == MatchDecision.mismatch) {
+      responseMarker = 10;
+    }
     _pushMarker(responseMarker);
 
     final isResponseCorrect = _isCorrect(userDecision, trial);
     final accuracy = isResponseCorrect ? 1 : 0;
-    
+
     int? rt;
     if (userDecision != MatchDecision.noResponse) {
       rt = DateTime.now().millisecondsSinceEpoch - _retrievalOnsetMs;
@@ -149,7 +193,9 @@ class TrialRunner extends ChangeNotifier {
     _transitionTo(TrialPhase.retrieval, trial);
 
     try {
-      final decision = await _responseCompleter!.future.timeout(const Duration(milliseconds: 2000));
+      final decision = await _responseCompleter!.future.timeout(
+        const Duration(milliseconds: 2000),
+      );
       return decision;
     } on TimeoutException {
       return MatchDecision.noResponse;
@@ -161,7 +207,9 @@ class TrialRunner extends ChangeNotifier {
   void _transitionTo(TrialPhase phase, TrialPlan? trial) {
     currentPhase = phase;
     currentTrial = trial;
-    if (phase == TrialPhase.cue || phase == TrialPhase.encoding || phase == TrialPhase.retrieval) {
+    if (phase == TrialPhase.cue ||
+        phase == TrialPhase.encoding ||
+        phase == TrialPhase.retrieval) {
       currentCue = trial?.cuedHemifield;
     } else {
       currentCue = null;
@@ -171,21 +219,35 @@ class TrialRunner extends ChangeNotifier {
 
   Future<void> _delay(int milliseconds) async {
     if (!_isRunning) return;
-    await Future.delayed(Duration(milliseconds: milliseconds));
+    final endTime = DateTime.now().millisecondsSinceEpoch + milliseconds;
+    while (DateTime.now().millisecondsSinceEpoch < endTime) {
+      if (!_isRunning) return;
+      if (_paused) {
+        final remaining = endTime - DateTime.now().millisecondsSinceEpoch;
+        await _resumeCompleter?.future;
+        if (!_isRunning) return;
+        return _delay(remaining);
+      }
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
   }
 
   TrialPlan _createTrialPlan(int trialNumber, int setSize) {
     final cuedHemifield = _random.nextBool() ? Hemifield.left : Hemifield.right;
     final isMatchTrial = _random.nextBool();
-    
+
     final leftItems = _createHemifieldItems(Hemifield.left, setSize);
     final rightItems = _createHemifieldItems(Hemifield.right, setSize);
-    
+
     final cuedItems = cuedHemifield == Hemifield.left ? leftItems : rightItems;
-    final uncuedItems = cuedHemifield == Hemifield.left ? rightItems : leftItems;
-    
-    final cuedTestItems = isMatchTrial ? cuedItems.map((e) => e.copyWith()).toList() : _createMismatchItems(cuedItems);
-    
+    final uncuedItems = cuedHemifield == Hemifield.left
+        ? rightItems
+        : leftItems;
+
+    final cuedTestItems = isMatchTrial
+        ? cuedItems.map((e) => e.copyWith()).toList()
+        : _createMismatchItems(cuedItems);
+
     List<StimulusItem> testItems;
     if (cuedHemifield == Hemifield.left) {
       testItems = [...cuedTestItems, ...uncuedItems.map((e) => e.copyWith())];
@@ -206,25 +268,33 @@ class TrialRunner extends ChangeNotifier {
   List<StimulusItem> _createHemifieldItems(Hemifield hemifield, int setSize) {
     final slots = List<StimulusSlot>.from(_slotTemplate)..shuffle(_random);
     final colors = List<Color>.from(_colorPalette)..shuffle(_random);
-    
+
     final selectedSlots = slots.take(setSize).toList();
     final selectedColors = colors.take(setSize).toList();
-    
-    return List.generate(setSize, (i) => StimulusItem(
-      hemifield: hemifield,
-      slot: selectedSlots[i],
-      color: selectedColors[i],
-    ));
+
+    return List.generate(
+      setSize,
+      (i) => StimulusItem(
+        hemifield: hemifield,
+        slot: selectedSlots[i],
+        color: selectedColors[i],
+      ),
+    );
   }
 
   List<StimulusItem> _createMismatchItems(List<StimulusItem> cuedItems) {
     final changedIndex = _random.nextInt(cuedItems.length);
     final usedColors = cuedItems.map((e) => e.color).toSet();
-    final availableColors = _colorPalette.where((c) => !usedColors.contains(c)).toList();
-    final replacement = availableColors[_random.nextInt(availableColors.length)];
-    
+    final availableColors = _colorPalette
+        .where((c) => !usedColors.contains(c))
+        .toList();
+    final replacement =
+        availableColors[_random.nextInt(availableColors.length)];
+
     final newItems = cuedItems.map((e) => e.copyWith()).toList();
-    newItems[changedIndex] = newItems[changedIndex].copyWith(color: replacement);
+    newItems[changedIndex] = newItems[changedIndex].copyWith(
+      color: replacement,
+    );
     return newItems;
   }
 
@@ -262,7 +332,7 @@ class TrialRunner extends ChangeNotifier {
     StimulusSlot(0.82, 0),
     StimulusSlot(-0.82, 0.58),
     StimulusSlot(0, 0.72),
-    StimulusSlot(0.82, 0.58)
+    StimulusSlot(0.82, 0.58),
   ];
 
   static const List<Color> _colorPalette = [
