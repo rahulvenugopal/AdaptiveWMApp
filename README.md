@@ -6,15 +6,14 @@ This application measures spatial working memory capacity using a computerized c
 
 ---
 
-## 📥 Downloads & Installables
+## 📥 Direct Downloads & Installables
 
-Pre-compiled binaries for all supported operating systems are automatically generated via GitHub Actions on every commit.
+> [!TIP]
+> Click any link below to immediately start downloading the latest compiled build (as a standard ZIP archive containing the package files).
 
-* 📱 **[Android APK](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the latest `Android-APK.zip` from the actions artifacts section to install directly on your Android device.
-* 🍏 **[iOS App Bundle](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `iOS-Build.zip` artifact. (Requires Xcode/macOS for local provisioning).
-* 🐧 **[Linux Executable](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `Linux-Build.zip` for Debian-based systems.
-
-> **Note:** To access these files, click on the most recent successful run in the [GitHub Actions tab](https://github.com/rahulvenugopal/AdaptiveWMApp/actions), scroll to the bottom, and click on the desired artifact under "Artifacts".
+* 📱 **[Download Android APK (Direct)](https://nightly.link/rahulvenugopal/AdaptiveWMApp/workflows/flutter_build/master/Android-APK.zip)**: Click to download the latest compiled `app-release.apk` directly.
+* 🍏 **[Download iOS App Bundle (Direct)](https://nightly.link/rahulvenugopal/AdaptiveWMApp/workflows/flutter_build/master/iOS-Build.zip)**: Click to download the latest iOS provision package (Xcode required for provisioning).
+* 🐧 **[Download Linux Executable (Direct)](https://nightly.link/rahulvenugopal/AdaptiveWMApp/workflows/flutter_build/master/Linux-Build.zip)**: Click to download the latest Linux release bundle.
 
 ---
 
