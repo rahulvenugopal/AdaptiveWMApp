@@ -1,4 +1,4 @@
-# Adaptive Change Detection Memory Task (ACDMT)
+# Adaptive Change Detection Memory Task (ACDMT) (v2.0.0)
 
 A high-precision cognitive psychological paradigm application built with **Flutter**, featuring native EEG hardware integration and raw data recording capabilities.
 
@@ -6,26 +6,27 @@ This application measures spatial working memory capacity using a computerized c
 
 ---
 
-## Key Capabilities
-
-1. **Change Detection Paradigm**: A spatial working memory task presenting arrays of red rectangles where users detect orientation changes across memory and test arrays.
-2. **Native EEG Hardware Integration**: Connects via Classic Bluetooth or BLE to physiological hardware (e.g., Orbit, EpiDome), streaming raw EEG samples seamlessly into the app.
-3. **Local .EDF Recording**: Fully standalone offline data collection! The app natively writes both raw EEG waveforms and synchronized experimental markers directly to standard `.edf` files using a highly optimized Rust native core.
-4. **Lab Streaming Layer (LSL) Integration**: Emits real-time, low-latency event markers via an LSL Outlet, allowing seamless synchronization with external EEG recording systems (e.g. BrainVision, NeuroScan, openbci).
-5. **High-Precision ERP Engine**: VSYNC-locked stimulus presentation using Flutter's `CustomPaint` and timer scheduling, ensuring millisecond-level markers that match standard experimental software (e.g. PsychoPy/E-Prime).
-6. **Local Data Persistence**: Automatically logs comprehensive trial-by-trial results, reaction times, and accuracy scores into standardized `.csv` files stored securely in the app's documents directory.
-7. **Cross-Platform**: Fully supports building for Android, iOS, and Linux for field research and diverse laboratory environments.
-
----
-
 ## 📥 Downloads & Installables
+
 Pre-compiled binaries for all supported operating systems are automatically generated via GitHub Actions on every commit.
 
-* 📱 **[Android APK](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the latest `Android-APK.zip` from the artifacts section to install directly on any Android device.
-* 🍏 **[iOS App Bundle](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `iOS-Build.zip` artifact. (Requires Xcode/macOS for device provisioning).
+* 📱 **[Android APK](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the latest `Android-APK.zip` from the actions artifacts section to install directly on your Android device.
+* 🍏 **[iOS App Bundle](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `iOS-Build.zip` artifact. (Requires Xcode/macOS for local provisioning).
 * 🐧 **[Linux Executable](https://github.com/rahulvenugopal/AdaptiveWMApp/actions/workflows/flutter_build.yml)**: Download the `Linux-Build.zip` for Debian-based systems.
 
 > **Note:** To access these files, click on the most recent successful run in the [GitHub Actions tab](https://github.com/rahulvenugopal/AdaptiveWMApp/actions), scroll to the bottom, and click on the desired artifact under "Artifacts".
+
+---
+
+## Key Capabilities
+
+1. **Change Detection Paradigm**: A spatial working memory task presenting arrays of red rectangles where users detect orientation changes across memory and test arrays.
+2. **EEG Integration (BT/LSL/Synthetic)**: Connects via Classic Bluetooth or BLE to physiological hardware (e.g., Orbit, EpiDome), streams raw EEG samples, and supports LSL WiFi stream acquisition.
+3. **Local .EDF Recording**: Standalone offline data collection with a highly optimized Rust native core (`libangel_eeg_core.so` / `.dylib`), saving event markers alongside raw EEG.
+4. **Lab Streaming Layer (LSL) Integration**: Emits real-time, low-latency event markers via an LSL Outlet, allowing seamless synchronization with external EEG recording systems (e.g. BrainVision, NeuroScan, openbci).
+5. **ACDMT Pause/Resume**: Active auto-pause on EEG disconnections (freezing current stimulus with a blur overlay) and auto-resuming with millisecond precision on reconnect.
+6. **Launch-Time Permissions**: One-time onboarding dialog requesting storage (including manageExternalStorage) and Bluetooth connectivity permissions upon app launch.
+7. **Unified Settings Console**: Consolidated grid view in Settings (Tab 4) for device presets, LSL parameters, display properties, and channel labeling.
 
 ---
 
@@ -38,9 +39,9 @@ adaptive_wmapp_flutter/
 ├── rust/                      # Native Rust core for ultra-fast EDF writing & EEG processing
 ├── third_party/               # Custom patched dependencies (e.g. flutter_bluetooth_serial)
 ├── lib/                       # Flutter Application source
-│   ├── models/                # Data models (Trial configuration, Results)
-│   ├── screens/               # App UI views (Setup Screen, Experiment Runner, Results Screen)
-│   ├── services/              # Core business logic (Acquisition, Native EDF Recorder, LSL Trial Runner)
+│   ├── models/                # Data models (Trial configuration, Results, LslConfig, ChannelConfig)
+│   ├── screens/               # App UI views (Setup Screen, Experiment Runner, Results Screen, LSL settings)
+│   ├── services/              # Core business logic (Acquisition, Native EDF Recorder, LSL Trial Runner, Permissions)
 │   ├── widgets/               # UI components (Custom Stimulus Renderer)
 │   └── main.dart              # Application entry point
 ├── pubspec.yaml               # Flutter dependencies (liblsl, flutter_blue_plus, etc.)
@@ -49,11 +50,12 @@ adaptive_wmapp_flutter/
 
 ---
 
-## Modality Specifications
+## Modality & DSP Specifications
 
 ### 1. Standalone EEG Recording (.edf)
-* **Rust Native Core**: The application employs a compiled Rust library (`libangel_eeg_core.so` / `.dylib`) invoked via Dart FFI. This handles high-throughput EEG sampling and marker synchronization without Dart garbage collection pauses.
-* **Outputs**: Raw multiplexed EEG data coupled exactly with the stimulus markers are saved locally as `.edf` files in the device's Documents folder.
+* **Rust Native Core**: The application employs a compiled Rust library invoked via Dart FFI. This handles high-throughput EEG sampling and marker synchronization without Dart garbage collection pauses.
+* **Outputs**: Raw multiplexed EEG data coupled exactly with the stimulus markers are saved locally as `.edf` files.
+* **EDF Splitting**: Splits files automatically on reconnection as `<subject>_<timestamp>_part<segment>.edf`, sharing the initial session timestamp.
 
 ### 2. Lab Streaming Layer (LSL)
 * **LSL Outlet**: Creates a local LSL stream named `AdaptiveWM_Markers` of type `Markers`.
@@ -110,7 +112,7 @@ graph TD
 ## Step-by-Step Build & Setup Guide
 
 ### 1. Prerequisites
-Ensure you have the following installed on your machine:
+Ensure you have the following installed on your developer machine:
 * **Flutter SDK** (`stable` channel)
 * **Android Studio / Android SDK** (for Android builds)
 * **Xcode** (for iOS builds, requires macOS)
@@ -165,4 +167,12 @@ void _pushMarker(int markerCode) {
     calloc.free(sample);
   }
 }
+```
+
+---
+
+## Verification Checks
+
+```bash
+flutter analyze lib/
 ```
