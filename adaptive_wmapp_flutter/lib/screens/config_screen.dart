@@ -4,7 +4,14 @@ import '../services/trial_runner.dart';
 import 'experiment_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
-  const ConfigScreen({super.key});
+  final String subjectId;
+  final bool showSleepinessPostSession;
+
+  const ConfigScreen({
+    super.key,
+    required this.subjectId,
+    required this.showSleepinessPostSession,
+  });
 
   @override
   State<ConfigScreen> createState() => _ConfigScreenState();
@@ -34,7 +41,12 @@ class _ConfigScreenState extends State<ConfigScreen> {
     runner.delayDurationMs = _delayDuration;
 
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const ExperimentScreen()),
+      MaterialPageRoute(
+        builder: (_) => ExperimentScreen(
+          subjectId: widget.subjectId,
+          showSleepinessPostSession: widget.showSleepinessPostSession,
+        ),
+      ),
     );
   }
 

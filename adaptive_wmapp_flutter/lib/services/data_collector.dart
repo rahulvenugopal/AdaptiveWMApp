@@ -41,7 +41,7 @@ class DataCollector {
     
     Directory rootDir;
     if (Platform.isAndroid) {
-      rootDir = Directory('/storage/emulated/0/ACDMT');
+      rootDir = Directory('/storage/emulated/0/Download/AdaptiveWM');
     } else {
       final docs = await getApplicationDocumentsDirectory();
       rootDir = Directory('${docs.path}/ACDMT');

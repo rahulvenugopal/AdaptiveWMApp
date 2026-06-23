@@ -4,21 +4,173 @@ import 'package:provider/provider.dart';
 import '../models/experiment_models.dart';
 import '../services/trial_runner.dart';
 import '../widgets/stimulus_renderer.dart';
+import '../widgets/stanford_sleepiness_scale.dart';
+import '../services/device_config_service.dart';
+import '../services/channel_config_service.dart';
+import '../services/acquisition_service.dart';
+import '../services/lsl_eeg_acquisition_service.dart';
 
 class ExperimentScreen extends StatefulWidget {
-  const ExperimentScreen({super.key});
+  final String subjectId;
+  final bool showSleepinessPostSession;
+
+  const ExperimentScreen({
+    super.key,
+    required this.subjectId,
+    required this.showSleepinessPostSession,
+  });
 
   @override
   State<ExperimentScreen> createState() => _ExperimentScreenState();
 }
 
 class _ExperimentScreenState extends State<ExperimentScreen> {
+  DeviceConfig? _deviceConfig;
+  ChannelConfig? _channelConfig;
+
+  StreamSubscription<AcquisitionState>? _acqSub;
+  StreamSubscription<AcquisitionState>? _lslSub;
+
+  @override
+  void initState() {
+    super.initState();
+    DeviceConfigService.load().then((cfg) {
+      if (!mounted) return;
+      setState(() => _deviceConfig = cfg);
+      _setupListeners();
+    });
+    ChannelConfigService.load().then((cfg) {
+      if (!mounted) return;
+      setState(() => _channelConfig = cfg);
+    });
+  }
+
+  void _setupListeners() {
+    final acq = context.read<AcquisitionService>();
+    final lsl = context.read<LslEegAcquisitionService>();
+
+    _acqSub = acq.state.listen((state) {
+      if (!mounted) return;
+      if (_deviceConfig?.eegSource != 'bluetooth') return;
+      _handleStateChange(state);
+    });
+
+    _lslSub = lsl.state.listen((state) {
+      if (!mounted) return;
+      if (_deviceConfig?.eegSource != 'lsl') return;
+      _handleStateChange(state);
+    });
+  }
+
+  void _handleStateChange(AcquisitionState state) {
+    if (_deviceConfig?.eegDisplayMode != 'eeg_and_paradigm') return;
+    
+    final runner = context.read<TrialRunner>();
+    if (state == AcquisitionState.disconnected && !runner.isPaused && runner.isRunning) {
+      runner.pause();
+    } else if (state == AcquisitionState.streaming && runner.isPaused) {
+      runner.resume();
+    }
+  }
+
+  @override
+  void dispose() {
+    _acqSub?.cancel();
+    _lslSub?.cancel();
+    super.dispose();
+  }
+
+  void _showExitConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Exit Experiment?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to stop the experiment early? Data collected so far will be saved.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.blueGrey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () {
+              Navigator.of(context).pop();
+              _exitExperiment();
+            },
+            child: const Text('Exit', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _exitExperiment() async {
+    final runner = context.read<TrialRunner>();
+    if (runner.isRunning) {
+      runner.stop();
+      // Wait for CSV and EDF to stop and export
+      await Future.delayed(const Duration(milliseconds: 1000));
+    }
+
+    if (widget.showSleepinessPostSession && mounted) {
+      await StanfordSleepinessScaleDialog.show(
+        context,
+        'AdaptiveWMApp',
+        widget.subjectId,
+        'post-session (exited)',
+      );
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: StimulusRenderer.backgroundColor,
-      body: Consumer<TrialRunner>(
-        builder: (context, runner, child) {
+    if (_deviceConfig == null || _channelConfig == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF020617),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        _showExitConfirmation();
+      },
+      child: Scaffold(
+        backgroundColor: StimulusRenderer.backgroundColor,
+        body: Stack(
+          children: [
+            _buildParadigm(context),
+            // Top-right exit button available at all times
+            Positioned(
+              top: 32,
+              right: 16,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54, size: 32),
+                tooltip: 'Exit Experiment',
+                onPressed: _showExitConfirmation,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParadigm(BuildContext context) {
+    return Consumer<TrialRunner>(
+      builder: (context, runner, child) {
           if (runner.currentPhase == TrialPhase.idle) {
             return Center(
               child: Padding(
@@ -36,9 +188,27 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 40),
-                    ElevatedButton(
-                      onPressed: () => runner.start(),
-                      child: const Text("Start Experiment"),
+                    Builder(
+                      builder: (context) {
+                        if (_deviceConfig?.eegDisplayMode == 'eeg_and_paradigm') {
+                          final isLsl = _deviceConfig?.eegSource == 'lsl';
+                          final state = isLsl
+                              ? context.watch<LslEegAcquisitionService>().currentState
+                              : context.watch<AcquisitionService>().currentState;
+                          
+                          if (state != AcquisitionState.streaming) {
+                            return ElevatedButton(
+                              onPressed: null,
+                              style: ElevatedButton.styleFrom(disabledBackgroundColor: Colors.grey[800]),
+                              child: const Text("Waiting for EEG Connection...", style: TextStyle(color: Colors.white54)),
+                            );
+                          }
+                        }
+                        return ElevatedButton(
+                          onPressed: () => runner.start(),
+                          child: const Text("Start Experiment"),
+                        );
+                      }
                     ),
                   ],
                 ),
@@ -52,15 +222,25 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text(
-                    "Experiment Complete\nData saved to CSV.",
+                    "Experiment Complete\nData saved to Downloads Folder.",
                     style: TextStyle(color: Colors.white, fontSize: 22),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      if (widget.showSleepinessPostSession) {
+                        await StanfordSleepinessScaleDialog.show(
+                          context,
+                          'AdaptiveWMApp',
+                          widget.subjectId,
+                          'post-session (finished)',
+                        );
+                      }
+                      if (!mounted) return;
                       runner.currentPhase = TrialPhase.idle;
                       setState(() {});
+                      Navigator.of(context).pop();
                     },
                     child: const Text("Return Home"),
                   ),
@@ -100,8 +280,7 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '${(runner.elapsedSeconds ~/ 60).toString().padLeft(2, '0')}:'
-                          '${(runner.elapsedSeconds % 60).toString().padLeft(2, '0')}',
+                          '${(runner.elapsedSeconds ~/ 60).toString().padLeft(2, '0')}:${(runner.elapsedSeconds % 60).toString().padLeft(2, '0')}',
                           style: const TextStyle(
                             color: Color(0xFF60A5FA),
                             fontFamily: 'monospace',
@@ -110,6 +289,16 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+              if (runner.isRunning)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: IconButton(
+                    onPressed: _showExitConfirmation,
+                    icon: const Icon(Icons.close, color: Colors.white70, size: 28),
+                    tooltip: 'Exit Experiment',
                   ),
                 ),
               if (runner.currentPhase == TrialPhase.retrieval)
@@ -243,7 +432,6 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
             ],
           );
         },
-      ),
-    );
+      );
   }
 }

@@ -16,6 +16,11 @@ class DeviceConfig {
     this.lslStreamType = 'EEG',
     this.lslStreamName = '',
     this.lslTimeout = 5.0,
+    this.showSleepinessPreSession = false,
+    this.showSleepinessPostSession = false,
+    this.notchEnabled = true,
+    this.bandpassEnabled = false,
+    this.eegDisplayMode = 'paradigm_only',
   });
 
   final String xampPrefix;
@@ -28,6 +33,11 @@ class DeviceConfig {
   final String lslStreamType;
   final String lslStreamName;
   final double lslTimeout;
+  final bool showSleepinessPreSession;
+  final bool showSleepinessPostSession;
+  final bool notchEnabled;
+  final bool bandpassEnabled;
+  final String eegDisplayMode;
 
   DeviceConfig copyWith({
     String? xampPrefix,
@@ -40,6 +50,11 @@ class DeviceConfig {
     String? lslStreamType,
     String? lslStreamName,
     double? lslTimeout,
+    bool? showSleepinessPreSession,
+    bool? showSleepinessPostSession,
+    bool? notchEnabled,
+    bool? bandpassEnabled,
+    String? eegDisplayMode,
   }) {
     return DeviceConfig(
       xampPrefix: xampPrefix ?? this.xampPrefix,
@@ -52,6 +67,11 @@ class DeviceConfig {
       lslStreamType: lslStreamType ?? this.lslStreamType,
       lslStreamName: lslStreamName ?? this.lslStreamName,
       lslTimeout: lslTimeout ?? this.lslTimeout,
+      showSleepinessPreSession: showSleepinessPreSession ?? this.showSleepinessPreSession,
+      showSleepinessPostSession: showSleepinessPostSession ?? this.showSleepinessPostSession,
+      notchEnabled: notchEnabled ?? this.notchEnabled,
+      bandpassEnabled: bandpassEnabled ?? this.bandpassEnabled,
+      eegDisplayMode: eegDisplayMode ?? this.eegDisplayMode,
     );
   }
 
@@ -66,6 +86,11 @@ class DeviceConfig {
         'lslStreamType': lslStreamType,
         'lslStreamName': lslStreamName,
         'lslTimeout': lslTimeout,
+        'showSleepinessPreSession': showSleepinessPreSession,
+        'showSleepinessPostSession': showSleepinessPostSession,
+        'notchEnabled': notchEnabled,
+        'bandpassEnabled': bandpassEnabled,
+        'eegDisplayMode': eegDisplayMode,
       };
 
   factory DeviceConfig.fromJson(Map<String, dynamic> json) {
@@ -83,6 +108,11 @@ class DeviceConfig {
       lslStreamType: json['lslStreamType'] as String? ?? 'EEG',
       lslStreamName: json['lslStreamName'] as String? ?? '',
       lslTimeout: (json['lslTimeout'] as num?)?.toDouble() ?? 5.0,
+      showSleepinessPreSession: json['showSleepinessPreSession'] as bool? ?? false,
+      showSleepinessPostSession: json['showSleepinessPostSession'] as bool? ?? false,
+      notchEnabled: json['notchEnabled'] as bool? ?? true,
+      bandpassEnabled: json['bandpassEnabled'] as bool? ?? false,
+      eegDisplayMode: json['eegDisplayMode'] as String? ?? 'paradigm_only',
     );
   }
 }

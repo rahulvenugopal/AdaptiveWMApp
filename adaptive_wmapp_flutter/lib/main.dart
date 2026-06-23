@@ -41,33 +41,7 @@ class _AcdmtAppState extends State<AcdmtApp> {
       }
     });
 
-    _acqService.state.listen((state) {
-      final context = navigatorKey.currentContext;
-      if (context != null) {
-        try {
-          final runner = Provider.of<TrialRunner>(context, listen: false);
-          if (state == AcquisitionState.disconnected && !runner.isPaused) {
-            runner.pause();
-          } else if (state == AcquisitionState.streaming && runner.isPaused) {
-            runner.resume();
-          }
-        } catch (_) {}
-      }
-    });
 
-    _lslEegService.state.listen((state) {
-      final context = navigatorKey.currentContext;
-      if (context != null) {
-        try {
-          final runner = Provider.of<TrialRunner>(context, listen: false);
-          if (state == AcquisitionState.disconnected && !runner.isPaused) {
-            runner.pause();
-          } else if (state == AcquisitionState.streaming && runner.isPaused) {
-            runner.resume();
-          }
-        } catch (_) {}
-      }
-    });
   }
 
   @override

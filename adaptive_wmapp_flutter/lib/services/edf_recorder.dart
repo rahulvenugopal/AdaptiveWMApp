@@ -64,7 +64,7 @@ class EdfRecorder {
     // ── Resolve output directory ───────────────────────────────────────────
     Directory rootDir;
     if (Platform.isAndroid) {
-      rootDir = Directory('/storage/emulated/0/ACDMT');
+      rootDir = Directory('/storage/emulated/0/Download/AdaptiveWM');
     } else {
       final dir = await getApplicationDocumentsDirectory();
       rootDir = Directory('${dir.path}/ACDMT');

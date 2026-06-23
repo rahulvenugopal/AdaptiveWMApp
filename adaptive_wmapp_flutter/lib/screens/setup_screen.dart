@@ -11,6 +11,10 @@ import '../services/device_config_service.dart';
 import '../services/channel_config_service.dart';
 import '../services/permission_service.dart';
 import '../services/edf_recorder.dart';
+import '../services/config_sharing_service.dart';
+import '../services/display_filter.dart';
+import '../widgets/stanford_sleepiness_scale.dart';
+import '../widgets/waveform_painter.dart';
 import 'config_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -51,6 +55,14 @@ class _SetupScreenState extends State<SetupScreen> {
   ChannelConfig _channelConfig = const ChannelConfig(labels: []);
   int _maxReconnectAttempts = 10;
   int _eegDisplayDuration = 10;
+  bool _showSleepinessPreSession = false;
+  bool _showSleepinessPostSession = false;
+  bool _notchEnabled = true;
+  bool _bandpassEnabled = false;
+  bool _autoscaleEnabled = false;
+  String _eegDisplayMode = 'paradigm_only';
+  List<DisplayFilter> _displayFilters = [];
+  double _sampleRate = 250.0;
   StreamSubscription<void>? _btMaxRetriesSub;
   StreamSubscription<void>? _lslMaxRetriesSub;
 
@@ -71,11 +83,17 @@ class _SetupScreenState extends State<SetupScreen> {
               _eegSource = config.eegSource;
               _gain = config.waveformGain;
               _stackedChannels = config.stackedChannels;
+              _showSleepinessPreSession = config.showSleepinessPreSession;
+              _showSleepinessPostSession = config.showSleepinessPostSession;
+              _notchEnabled = config.notchEnabled;
+              _bandpassEnabled = config.bandpassEnabled;
+              _eegDisplayMode = config.eegDisplayMode;
               _lslConfig = LslConfig(
                 eegStreamType: config.lslStreamType,
                 eegStreamName: config.lslStreamName,
                 resolveTimeoutSeconds: config.lslTimeout,
               );
+              _resetDisplayFilters();
             });
 
             final prefix = config.xampPrefix.trim().isEmpty
@@ -211,9 +229,23 @@ class _SetupScreenState extends State<SetupScreen> {
 
   void _onSample(EegSample sample) {
     if (!mounted) return;
+    if (sample.sampleRate != _sampleRate) {
+      _sampleRate = sample.sampleRate;
+      _resetDisplayFilters();
+    }
+    
     setState(() {
       for (var i = 0; i < _channelCount; i++) {
-        final value = i < sample.channels.length ? sample.channels[i] : 0.0;
+        var value = i < sample.channels.length ? sample.channels[i] : 0.0;
+        
+        if (i < _displayFilters.length) {
+          value = _displayFilters[i].process(
+            value,
+            notchEnabled: _notchEnabled,
+            bandpassEnabled: _bandpassEnabled,
+          );
+        }
+        
         final buffer = _channelBuffers[i];
         buffer.add(value);
         if (buffer.length > _maxSamples) {
@@ -221,6 +253,16 @@ class _SetupScreenState extends State<SetupScreen> {
         }
       }
     });
+  }
+
+  void _resetDisplayFilters() {
+    _displayFilters = List.generate(
+      _channelCount,
+      (_) => DisplayFilter(_sampleRate),
+    );
+    for (final buffer in _channelBuffers) {
+      buffer.clear();
+    }
   }
 
   void _saveCurrentConfig() {
@@ -244,6 +286,11 @@ class _SetupScreenState extends State<SetupScreen> {
       lslStreamType: _lslConfig.eegStreamType,
       lslStreamName: _lslConfig.eegStreamName,
       lslTimeout: _lslConfig.resolveTimeoutSeconds,
+      showSleepinessPreSession: _showSleepinessPreSession,
+      showSleepinessPostSession: _showSleepinessPostSession,
+      notchEnabled: _notchEnabled,
+      bandpassEnabled: _bandpassEnabled,
+      eegDisplayMode: _eegDisplayMode,
     );
     DeviceConfigService.save(config);
   }
@@ -279,6 +326,16 @@ class _SetupScreenState extends State<SetupScreen> {
       return;
     }
 
+    if (_showSleepinessPreSession) {
+      if (!mounted) return;
+      await StanfordSleepinessScaleDialog.show(
+        context,
+        'AdaptiveWMApp',
+        _subjectController.text,
+        'pre-session',
+      );
+    }
+
     final edf = context.read<EdfRecorder>();
     final acq = context.read<AcquisitionService>();
     final lsl = context.read<LslEegAcquisitionService>();
@@ -289,18 +346,25 @@ class _SetupScreenState extends State<SetupScreen> {
     final labels = _getEffectiveLabels(activeChannelCount);
 
     try {
-      await edf.start(
-        subject: _subjectController.text,
-        channelCount: activeChannelCount > 0 ? activeChannelCount : 16,
-        sampleRate: activeSampleRate > 0 ? activeSampleRate.round() : 250,
-        channelLabels: labels,
-        segment: 0,
-      );
+      if (_eegSource != 'none') {
+        await edf.start(
+          subject: _subjectController.text,
+          channelCount: activeChannelCount > 0 ? activeChannelCount : 16,
+          sampleRate: activeSampleRate > 0 ? activeSampleRate.round() : 250,
+          channelLabels: labels,
+          segment: 0,
+        );
+      }
       _updateElapsedTimer(true);
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const ConfigScreen()),
+        MaterialPageRoute(
+          builder: (_) => ConfigScreen(
+            subjectId: _subjectController.text,
+            showSleepinessPostSession: _showSleepinessPostSession,
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(
@@ -534,6 +598,11 @@ class _SetupScreenState extends State<SetupScreen> {
                                 icon: Icon(Icons.settings_suggest),
                                 label: Text('Synthetic'),
                               ),
+                              ButtonSegment(
+                                value: 'none',
+                                icon: Icon(Icons.videogame_asset_off),
+                                label: Text('Paradigm Only'),
+                              ),
                             ],
                             selected: {_eegSource},
                             onSelectionChanged: (selection) {
@@ -610,13 +679,21 @@ class _SetupScreenState extends State<SetupScreen> {
                               : _lslConfig.eegStreamName,
                         ),
                       )
-                    else
+                    else if (_eegSource == 'synthetic')
                       const InputDecorator(
                         decoration: InputDecoration(
                           labelText: 'Device unit',
                           border: OutlineInputBorder(),
                         ),
                         child: Text('Synthetic EEG generator'),
+                      )
+                    else
+                      const InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Device unit',
+                          border: OutlineInputBorder(),
+                        ),
+                        child: Text('No EEG recording (Behavioral Only)'),
                       ),
                     const SizedBox(height: 12),
                     Row(
@@ -635,10 +712,11 @@ class _SetupScreenState extends State<SetupScreen> {
                             ),
                           ),
                         if (_eegSource == 'bluetooth') const SizedBox(width: 8),
-                        FilledButton.tonalIcon(
-                          onPressed: isStreaming
-                              ? _stopActiveConnection
-                              : () async {
+                        if (_eegSource != 'none')
+                          FilledButton.tonalIcon(
+                            onPressed: isStreaming
+                                ? _stopActiveConnection
+                                : () async {
                                   if (_eegSource == 'lsl') {
                                     await lsl.connect(_lslConfig);
                                   } else if (_eegSource == 'synthetic') {
@@ -932,6 +1010,104 @@ class _SetupScreenState extends State<SetupScreen> {
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
+        // IMPORT / EXPORT CONFIGURATION
+        Card(
+          color: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'IMPORT / EXPORT CONFIGURATION',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: theme.primaryColor,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.download),
+                        label: const Text('Import Config'),
+                        onPressed: () async {
+                          final config = await ConfigSharingService.importConfig(context);
+                          if (config != null) {
+                            try {
+                              final imported = DeviceConfig.fromJson(config);
+                              setState(() {
+                                _xampPrefixController.text = imported.xampPrefix;
+                                _maxReconnectAttempts = imported.maxReconnectAttempts;
+                                _stackedChannels = imported.stackedChannels;
+                                _gain = imported.waveformGain;
+                                _showSleepinessPreSession = imported.showSleepinessPreSession;
+                                _showSleepinessPostSession = imported.showSleepinessPostSession;
+                                _notchEnabled = imported.notchEnabled;
+                                _bandpassEnabled = imported.bandpassEnabled;
+                                _eegDisplayMode = imported.eegDisplayMode;
+                                acq.reconnectMaxAttempts = _maxReconnectAttempts;
+                                lsl.reconnectMaxAttempts = _maxReconnectAttempts;
+                                _resetDisplayFilters();
+                              });
+                              _saveCurrentConfig();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Configuration imported successfully')),
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Invalid configuration format: $e')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.upload),
+                        label: const Text('Export Config'),
+                        onPressed: () {
+                          // Force a save to ensure config is up to date before exporting
+                          _saveCurrentConfig();
+                          // Construct the config manually to be safe, or just call toJson on DeviceConfig
+                          final prefix = _xampPrefixController.text.trim().isEmpty ? 'AXXSPU00003' : _xampPrefixController.text.trim().toUpperCase();
+                          final config = DeviceConfig(
+                            xampPrefix: prefix,
+                            waveformGain: _gain,
+                            stackedChannels: _stackedChannels,
+                            visibleChannels: _visibleChannels.asMap().entries.where((e) => e.value).map((e) => e.key).toList(),
+                            maxReconnectAttempts: _maxReconnectAttempts,
+                            eegDisplayDuration: _eegDisplayDuration,
+                            eegSource: _eegSource,
+                            lslStreamType: _lslConfig.eegStreamType,
+                            lslStreamName: _lslConfig.eegStreamName,
+                            lslTimeout: _lslConfig.resolveTimeoutSeconds,
+                            showSleepinessPreSession: _showSleepinessPreSession,
+                            showSleepinessPostSession: _showSleepinessPostSession,
+                            notchEnabled: _notchEnabled,
+                            bandpassEnabled: _bandpassEnabled,
+                            eegDisplayMode: _eegDisplayMode,
+                          );
+                          ConfigSharingService.exportConfig(context, 'AdaptiveWMApp', config.toJson());
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
         // DEVICE CONFIGURATION
         Card(
           color: const Color(0xFF1E293B),
@@ -1021,6 +1197,96 @@ class _SetupScreenState extends State<SetupScreen> {
                   value: _stackedChannels,
                   onChanged: (value) {
                     setState(() => _stackedChannels = value);
+                    _saveCurrentConfig();
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Autoscale Waveform'),
+                  value: _autoscaleEnabled,
+                  onChanged: (value) {
+                    setState(() => _autoscaleEnabled = value);
+                    _saveCurrentConfig();
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('50Hz Notch Filter'),
+                  value: _notchEnabled,
+                  onChanged: (value) {
+                    setState(() => _notchEnabled = value);
+                    _saveCurrentConfig();
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('1-30Hz Bandpass Filter'),
+                  value: _bandpassEnabled,
+                  onChanged: (value) {
+                    setState(() => _bandpassEnabled = value);
+                    _saveCurrentConfig();
+                  },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _eegDisplayMode,
+                  dropdownColor: const Color(0xFF1E293B),
+                  decoration: const InputDecoration(
+                    labelText: 'Experiment Display Mode',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'paradigm_only', child: Text('Paradigm Only')),
+                    DropdownMenuItem(value: 'eeg_and_paradigm', child: Text('EEG + Paradigm (Background Recording)')),
+                  ],
+                  onChanged: (val) {
+                    setState(() => _eegDisplayMode = val ?? 'paradigm_only');
+                    _saveCurrentConfig();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // ASSESSMENT SETTINGS
+        Card(
+          color: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'ASSESSMENT SETTINGS',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: theme.primaryColor,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Show Sleepiness Scale (Pre-Session)'),
+                  value: _showSleepinessPreSession,
+                  onChanged: (value) {
+                    setState(() => _showSleepinessPreSession = value);
+                    _saveCurrentConfig();
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Show Sleepiness Scale (Post-Session)'),
+                  value: _showSleepinessPostSession,
+                  onChanged: (value) {
+                    setState(() => _showSleepinessPostSession = value);
                     _saveCurrentConfig();
                   },
                 ),
@@ -1312,12 +1578,15 @@ class _SetupScreenState extends State<SetupScreen> {
                 _saveCurrentConfig();
               },
               child: CustomPaint(
-                painter: _SetupEegPainter(
-                  channelData: _channelBuffers,
+                painter: WaveformPainter(
+                  channels: _channelBuffers,
                   visibleChannels: _visibleChannels,
                   stacked: _stackedChannels,
                   selectedChannel: _selectedChannel,
                   gain: _gain,
+                  sampleRate: _sampleRate,
+                  durationSeconds: _eegDisplayDuration,
+                  autoscale: _autoscaleEnabled,
                   channelLabels: _getEffectiveLabels(_channelCount),
                 ),
                 child: Center(
@@ -1354,8 +1623,8 @@ class _SetupScreenState extends State<SetupScreen> {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: _SetupEegPainter
-                .colors[channel % _SetupEegPainter.colors.length],
+            color: WaveformPainter
+                .colors[channel % WaveformPainter.colors.length],
             width: 2,
           ),
         ),
@@ -1394,123 +1663,4 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 }
 
-class _SetupEegPainter extends CustomPainter {
-  _SetupEegPainter({
-    required this.channelData,
-    required this.visibleChannels,
-    required this.stacked,
-    required this.selectedChannel,
-    required this.gain,
-    this.channelLabels,
-  });
 
-  static const colors = [
-    Colors.cyanAccent,
-    Colors.orangeAccent,
-    Colors.limeAccent,
-    Colors.pinkAccent,
-    Colors.blueAccent,
-    Colors.amberAccent,
-    Colors.greenAccent,
-    Colors.deepPurpleAccent,
-  ];
-
-  final List<List<double>> channelData;
-  final List<bool> visibleChannels;
-  final bool stacked;
-  final int selectedChannel;
-  final double gain;
-  final List<String>? channelLabels;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final bg = Paint()..color = const Color(0xFF020617);
-    canvas.drawRect(Offset.zero & size, bg);
-
-    if (stacked) {
-      final visible = <int>[];
-      for (var i = 0; i < visibleChannels.length; i++) {
-        if (visibleChannels[i]) visible.add(i);
-      }
-      if (visible.isEmpty) return;
-      final laneHeight = size.height / visible.length;
-      for (var lane = 0; lane < visible.length; lane++) {
-        final channel = visible[lane];
-        _drawChannel(
-          canvas,
-          size,
-          channel,
-          lane * laneHeight + laneHeight / 2,
-          laneHeight * 0.42,
-        );
-      }
-    } else {
-      _drawChannel(
-        canvas,
-        size,
-        selectedChannel.clamp(0, channelData.length - 1),
-        size.height / 2,
-        size.height * 0.42,
-      );
-    }
-  }
-
-  void _drawChannel(
-    Canvas canvas,
-    Size size,
-    int channel,
-    double centerY,
-    double laneAmplitude,
-  ) {
-    if (channel >= channelData.length || channelData[channel].length < 2) {
-      return;
-    }
-    final data = channelData[channel];
-    final paint = Paint()
-      ..color = colors[channel % colors.length]
-      ..strokeWidth = 1.4
-      ..style = PaintingStyle.stroke;
-    final axisPaint = Paint()
-      ..color = Colors.white10
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), axisPaint);
-
-    // Draw custom channel label
-    final label = channelLabels != null && channel < channelLabels!.length
-        ? channelLabels![channel]
-        : 'Ch ${channel + 1}';
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(color: colors[channel % colors.length], fontSize: 11),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(8, centerY - textPainter.height - 4));
-
-    final window = min(data.length, 1000);
-    final start = data.length - window;
-    final visibleData = data.sublist(start);
-    final maxAbs = visibleData.fold<double>(
-      1.0,
-      (prev, value) => max(prev, value.abs()),
-    );
-    final path = Path();
-    for (var i = 0; i < visibleData.length; i++) {
-      final x = visibleData.length == 1
-          ? 0.0
-          : i / (visibleData.length - 1) * size.width;
-      final y = centerY - (visibleData[i] / maxAbs) * laneAmplitude * gain;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SetupEegPainter oldDelegate) => true;
-}

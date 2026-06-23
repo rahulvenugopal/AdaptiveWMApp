@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:liblsl/lsl.dart';
@@ -106,8 +107,33 @@ class TrialRunner extends ChangeNotifier {
     }
 
     _transitionTo(TrialPhase.finished, null);
-    await dataCollector.saveToCsvFile();
-    await edfRecorder.stop();
+    final csvPath = await dataCollector.saveToCsvFile();
+    final edfPath = await edfRecorder.stop();
+    
+    try {
+      if (Platform.isAndroid) {
+        final sessionDate = DateTime.now().toIso8601String().split('T')[0];
+        final downloadDir = Directory('/storage/emulated/0/Download/AdaptiveWM/Session_$sessionDate');
+        if (!await downloadDir.exists()) {
+          await downloadDir.create(recursive: true);
+        }
+        
+        final csvFile = File(csvPath);
+        if (await csvFile.exists()) {
+          await csvFile.copy('${downloadDir.path}/${csvFile.uri.pathSegments.last}');
+        }
+        
+        if (edfPath != null) {
+          final edfFile = File(edfPath);
+          if (await edfFile.exists()) {
+            await edfFile.copy('${downloadDir.path}/${edfFile.uri.pathSegments.last}');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Export error: $e');
+    }
+    
     _isRunning = false;
     _elapsedTimer?.cancel();
     _elapsedTimer = null;
