@@ -19,6 +19,7 @@ class EdfRecorder {
   int _channelCount = 2; // EEG channels + 1 Marker channel
   int _sampleRate = 100;
   List<String> _channelLabels = [];
+  List<bool>? _enabledChannels;
   /// Shared timestamp captured at segment 0, reused for all subsequent segments.
   String? _sessionTimestamp;
   final Queue<int> _markerQueue = Queue<int>();
@@ -44,6 +45,7 @@ class EdfRecorder {
   /// [channelLabels]  – Optional list of electrode label strings.  When supplied,
   ///                    [NativeCore.openEdfWithLabels] is used; otherwise the
   ///                    simpler [NativeCore.openEdf] is used.
+  /// [enabledChannels]– List of booleans indicating which channels are enabled.
   /// [segment]        – 0 for a fresh session (captures timestamp), >0 to append
   ///                    a new segment file with the same session timestamp.
   Future<String> start({
@@ -51,6 +53,7 @@ class EdfRecorder {
     required int channelCount,
     required int sampleRate,
     List<String>? channelLabels,
+    List<bool>? enabledChannels,
     int segment = 0,
   }) async {
     await stop();
@@ -59,6 +62,7 @@ class EdfRecorder {
     _channelCount = (channelCount + 1).clamp(2, 33);
     _sampleRate = sampleRate.clamp(50, 1000);
     _channelLabels = channelLabels ?? [];
+    _enabledChannels = enabledChannels;
     _markerQueue.clear();
 
     // ── Resolve output directory ───────────────────────────────────────────
@@ -137,12 +141,17 @@ class EdfRecorder {
   void push(EegSample sample) {
     if (_writer == nullptr) return;
     final values = List<double>.filled(_channelCount, 0.0);
-    final eegChannels = _channelCount - 1;
-    for (var i = 0; i < eegChannels; i++) {
-      if (i < sample.channels.length) {
-        values[i] = sample.channels[i];
+    int writeIdx = 0;
+    
+    for (var i = 0; i < sample.channels.length; i++) {
+      final isEnabled = _enabledChannels == null ||
+          i >= _enabledChannels!.length ||
+          _enabledChannels![i];
+      if (isEnabled && writeIdx < _channelCount - 1) {
+        values[writeIdx++] = sample.channels[i];
       }
     }
+    
     int markerToPush = 0;
     if (_markerQueue.isNotEmpty) {
       markerToPush = _markerQueue.removeFirst();

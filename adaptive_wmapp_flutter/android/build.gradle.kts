@@ -1,3 +1,5 @@
+import com.android.build.gradle.BaseExtension
+
 allprojects {
     repositories {
         google()
@@ -17,6 +19,23 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    val configureCompileSdk = {
+        if (project.plugins.hasPlugin("com.android.application") ||
+            project.plugins.hasPlugin("com.android.library")) {
+            val android = project.extensions.getByName("android") as com.android.build.gradle.BaseExtension
+            android.compileSdkVersion(36)
+        }
+    }
+    if (state.executed) {
+        configureCompileSdk()
+    } else {
+        afterEvaluate {
+            configureCompileSdk()
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

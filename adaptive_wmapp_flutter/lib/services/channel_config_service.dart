@@ -14,34 +14,51 @@ const _orbitLabels = ['Fp1', 'Fp2'];
 /// Holds a list of EEG channel labels used for EDF header metadata and UI.
 class ChannelConfig {
   final List<String> labels;
-  const ChannelConfig({required this.labels});
+  final List<bool> enabled;
 
-  Map<String, dynamic> toJson() => {'labels': labels};
+  const ChannelConfig({
+    required this.labels,
+    this.enabled = const [],
+  });
 
-  factory ChannelConfig.fromJson(Map<String, dynamic> j) =>
-      ChannelConfig(labels: List<String>.from(j['labels'] as List));
+  Map<String, dynamic> toJson() => {
+        'labels': labels,
+        'enabled': enabled,
+      };
+
+  factory ChannelConfig.fromJson(Map<String, dynamic> j) => ChannelConfig(
+        labels: List<String>.from(j['labels'] as List),
+        enabled: j['enabled'] != null
+            ? List<bool>.from(j['enabled'] as List)
+            : const [],
+      );
+
+  bool isChannelEnabled(int index) {
+    if (index < 0) return false;
+    if (index >= enabled.length) return true;
+    return enabled[index];
+  }
 
   /// Returns device-appropriate default labels based on [source] string.
   /// Falls back to generic 'Ch N' labels for unknown device types.
   static ChannelConfig defaults(int channelCount, String source) {
+    List<String> defaultLabels;
     if (source.contains('EpiDome') || source.contains('xAMP')) {
-      return ChannelConfig(
-        labels: List.generate(
-          channelCount,
-          (i) => i < _xampL10Labels.length ? _xampL10Labels[i] : 'Ch ${i + 1}',
-        ),
+      defaultLabels = List.generate(
+        channelCount,
+        (i) => i < _xampL10Labels.length ? _xampL10Labels[i] : 'Ch ${i + 1}',
       );
-    }
-    if (source.contains('Orbit')) {
-      return ChannelConfig(
-        labels: List.generate(
-          channelCount,
-          (i) => i < _orbitLabels.length ? _orbitLabels[i] : 'Ch ${i + 1}',
-        ),
+    } else if (source.contains('Orbit')) {
+      defaultLabels = List.generate(
+        channelCount,
+        (i) => i < _orbitLabels.length ? _orbitLabels[i] : 'Ch ${i + 1}',
       );
+    } else {
+      defaultLabels = List.generate(channelCount, (i) => 'Ch ${i + 1}');
     }
     return ChannelConfig(
-      labels: List.generate(channelCount, (i) => 'Ch ${i + 1}'),
+      labels: defaultLabels,
+      enabled: List<bool>.filled(channelCount, true),
     );
   }
 }

@@ -142,7 +142,14 @@ class _SetupScreenState extends State<SetupScreen> {
     });
 
     ChannelConfigService.load().then((c) {
-      if (mounted) setState(() => _channelConfig = c);
+      if (mounted) {
+        setState(() {
+          _channelConfig = c;
+          for (var i = 0; i < _visibleChannels.length; i++) {
+            _visibleChannels[i] = c.isChannelEnabled(i);
+          }
+        });
+      }
     });
   }
 
@@ -347,11 +354,20 @@ class _SetupScreenState extends State<SetupScreen> {
 
     try {
       if (_eegSource != 'none') {
+        final channelCountVal = activeChannelCount > 0 ? activeChannelCount : 16;
+        final enabledList = List<bool>.generate(channelCountVal, (i) => _channelConfig.isChannelEnabled(i));
+        final filteredLabels = <String>[];
+        for (var i = 0; i < channelCountVal; i++) {
+          if (enabledList[i]) {
+            filteredLabels.add(labels[i]);
+          }
+        }
         await edf.start(
           subject: _subjectController.text,
-          channelCount: activeChannelCount > 0 ? activeChannelCount : 16,
+          channelCount: filteredLabels.length,
           sampleRate: activeSampleRate > 0 ? activeSampleRate.round() : 250,
-          channelLabels: labels,
+          channelLabels: filteredLabels,
+          enabledChannels: enabledList,
           segment: 0,
         );
       }
@@ -1433,37 +1449,69 @@ class _SetupScreenState extends State<SetupScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: 2,
-                  childAspectRatio: 3.5,
+                  childAspectRatio: 2.8,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
                   children: List.generate(16, (i) {
                     final currentLabel = _channelConfig.labels.length > i
                         ? _channelConfig.labels[i]
                         : 'Ch ${i + 1}';
-                    return TextFormField(
-                      initialValue: currentLabel,
-                      key: ValueKey('ch_${i}_$currentLabel'),
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        labelText: 'Channel ${i + 1}',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
+                    final isEnabled = _channelConfig.isChannelEnabled(i);
+                    return Row(
+                      children: [
+                        Checkbox(
+                          value: isEnabled,
+                          onChanged: (val) async {
+                            final labels = List<String>.from(_channelConfig.labels);
+                            while (labels.length <= i) {
+                              labels.add('Ch ${labels.length + 1}');
+                            }
+                            final enabled = List<bool>.from(_channelConfig.enabled);
+                            while (enabled.length <= i) {
+                              enabled.add(true);
+                            }
+                            enabled[i] = val ?? true;
+                            final newConfig = ChannelConfig(labels: labels, enabled: enabled);
+                            setState(() {
+                              _channelConfig = newConfig;
+                            });
+                            await ChannelConfigService.save(newConfig);
+                          },
                         ),
-                      ),
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (val) async {
-                        final labels = List<String>.from(_channelConfig.labels);
-                        while (labels.length <= i) {
-                          labels.add('Ch ${labels.length + 1}');
-                        }
-                        labels[i] = val.trim();
-                        final newConfig = ChannelConfig(labels: labels);
-                        _channelConfig = newConfig;
-                        await ChannelConfigService.save(newConfig);
-                      },
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: currentLabel,
+                            key: ValueKey('ch_${i}_$currentLabel'),
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              labelText: 'Channel ${i + 1}',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                            ),
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (val) async {
+                              final labels = List<String>.from(_channelConfig.labels);
+                              while (labels.length <= i) {
+                                  labels.add('Ch ${labels.length + 1}');
+                              }
+                              labels[i] = val.trim();
+                              final enabled = List<bool>.from(_channelConfig.enabled);
+                              while (enabled.length <= i) {
+                                  enabled.add(true);
+                              }
+                              final newConfig = ChannelConfig(labels: labels, enabled: enabled);
+                              setState(() {
+                                _channelConfig = newConfig;
+                              });
+                              await ChannelConfigService.save(newConfig);
+                            },
+                          ),
+                        ),
+                      ],
                     );
                   }),
                 ),
