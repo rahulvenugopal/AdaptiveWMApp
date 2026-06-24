@@ -136,7 +136,7 @@ class _LiveWaveformViewState extends State<LiveWaveformView> {
         gain: widget.deviceConfig.waveformGain,
         sampleRate: _sampleRate,
         durationSeconds: widget.deviceConfig.eegDisplayDuration,
-        autoscale: false, // Defaulting to false, or add autoscale to DeviceConfig later
+        autoscale: widget.deviceConfig.autoscaleEnabled,
         channelLabels: _getEffectiveLabels(activeChannelCount),
       ),
       child: const SizedBox.expand(),

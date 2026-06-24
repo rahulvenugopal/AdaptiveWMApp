@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/eeg_sample.dart';
 import '../models/lsl_config.dart';
@@ -87,6 +88,7 @@ class _SetupScreenState extends State<SetupScreen> {
               _showSleepinessPostSession = config.showSleepinessPostSession;
               _notchEnabled = config.notchEnabled;
               _bandpassEnabled = config.bandpassEnabled;
+              _autoscaleEnabled = config.autoscaleEnabled;
               _eegDisplayMode = config.eegDisplayMode;
               _lslConfig = LslConfig(
                 eegStreamType: config.lslStreamType,
@@ -297,6 +299,7 @@ class _SetupScreenState extends State<SetupScreen> {
       showSleepinessPostSession: _showSleepinessPostSession,
       notchEnabled: _notchEnabled,
       bandpassEnabled: _bandpassEnabled,
+      autoscaleEnabled: _autoscaleEnabled,
       eegDisplayMode: _eegDisplayMode,
     );
     DeviceConfigService.save(config);
@@ -420,6 +423,27 @@ class _SetupScreenState extends State<SetupScreen> {
                 icon: const Icon(Icons.bluetooth_searching),
                 label: const Text('Scan'),
               ),
+            IconButton(
+              tooltip: 'Exit App',
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Exit App'),
+                  content: const Text('Are you sure you want to close ACDMT?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        SystemNavigator.pop();
+                      },
+                      child: const Text('Exit', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              ),
+              icon: const Icon(Icons.exit_to_app, color: Colors.redAccent),
+            ),
           ],
           bottom: const TabBar(
             indicatorColor: Color(0xFF14B8A6),

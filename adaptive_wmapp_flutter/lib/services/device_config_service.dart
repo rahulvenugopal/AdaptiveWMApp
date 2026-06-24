@@ -20,6 +20,7 @@ class DeviceConfig {
     this.showSleepinessPostSession = false,
     this.notchEnabled = true,
     this.bandpassEnabled = false,
+    this.autoscaleEnabled = false,
     this.eegDisplayMode = 'paradigm_only',
   });
 
@@ -37,6 +38,7 @@ class DeviceConfig {
   final bool showSleepinessPostSession;
   final bool notchEnabled;
   final bool bandpassEnabled;
+  final bool autoscaleEnabled;
   final String eegDisplayMode;
 
   DeviceConfig copyWith({
@@ -54,6 +56,7 @@ class DeviceConfig {
     bool? showSleepinessPostSession,
     bool? notchEnabled,
     bool? bandpassEnabled,
+    bool? autoscaleEnabled,
     String? eegDisplayMode,
   }) {
     return DeviceConfig(
@@ -71,6 +74,7 @@ class DeviceConfig {
       showSleepinessPostSession: showSleepinessPostSession ?? this.showSleepinessPostSession,
       notchEnabled: notchEnabled ?? this.notchEnabled,
       bandpassEnabled: bandpassEnabled ?? this.bandpassEnabled,
+      autoscaleEnabled: autoscaleEnabled ?? this.autoscaleEnabled,
       eegDisplayMode: eegDisplayMode ?? this.eegDisplayMode,
     );
   }
@@ -90,6 +94,7 @@ class DeviceConfig {
         'showSleepinessPostSession': showSleepinessPostSession,
         'notchEnabled': notchEnabled,
         'bandpassEnabled': bandpassEnabled,
+        'autoscaleEnabled': autoscaleEnabled,
         'eegDisplayMode': eegDisplayMode,
       };
 
@@ -112,6 +117,7 @@ class DeviceConfig {
       showSleepinessPostSession: json['showSleepinessPostSession'] as bool? ?? false,
       notchEnabled: json['notchEnabled'] as bool? ?? true,
       bandpassEnabled: json['bandpassEnabled'] as bool? ?? false,
+      autoscaleEnabled: json['autoscaleEnabled'] as bool? ?? false,
       eegDisplayMode: json['eegDisplayMode'] as String? ?? 'paradigm_only',
     );
   }
