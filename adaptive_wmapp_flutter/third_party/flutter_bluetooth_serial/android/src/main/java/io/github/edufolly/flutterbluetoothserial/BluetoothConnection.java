@@ -10,9 +10,12 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 
+import android.util.Log;
+
 /// Universal Bluetooth serial connection class (for Java)
 public abstract class BluetoothConnection
 {
+    private static final String TAG = "BluetoothConnection";
     protected static final UUID DEFAULT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     protected BluetoothAdapter bluetoothAdapter;
@@ -31,11 +34,7 @@ public abstract class BluetoothConnection
 
 
 
-    // @TODO . `connect` could be done perfored on the other thread
-    // @TODO . `connect` parameter: timeout
-    // @TODO . `connect` other methods than `createRfcommSocketToServiceRecord`, including hidden one raw `createRfcommSocket` (on channel).
-    // @TODO ? how about turning it into factoried?
-    /// Connects to given device by hardware address
+    /// Connects to given device by hardware address with fallback
     public void connect(String address, UUID uuid) throws IOException {
         if (isConnected()) {
             throw new IOException("already connected");
@@ -46,15 +45,57 @@ public abstract class BluetoothConnection
             throw new IOException("device not found");
         }
 
-        BluetoothSocket socket = device.createRfcommSocketToServiceRecord(uuid); // @TODO . introduce ConnectionMethod
+        // Cancel discovery before connecting
+        bluetoothAdapter.cancelDiscovery();
+
+        BluetoothSocket socket = null;
+        IOException lastException = null;
+
+        // 1. Try insecure RFCOMM connection first (crucial for no-PIN SPP modules like xAMP / EpiDome)
+        try {
+            socket = device.createInsecureRfcommSocketToServiceRecord(uuid);
+            if (socket != null) {
+                socket.connect();
+            }
+        } catch (IOException e) {
+            lastException = e;
+            Log.w(TAG, "Insecure RFCOMM socket connect failed: " + e.getMessage() + ". Trying secure RFCOMM...");
+            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+            socket = null;
+        }
+
+        // 2. Try secure RFCOMM connection
+        if (socket == null) {
+            try {
+                socket = device.createRfcommSocketToServiceRecord(uuid);
+                if (socket != null) {
+                    socket.connect();
+                }
+            } catch (IOException e) {
+                lastException = e;
+                Log.w(TAG, "Secure RFCOMM socket connect failed: " + e.getMessage() + ". Trying reflection RFCOMM channel 1...");
+                try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                socket = null;
+            }
+        }
+
+        // 3. Try reflection createRfcommSocket (channel 1 fallback)
+        if (socket == null) {
+            try {
+                socket = (BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class<?>[] {int.class}).invoke(device, 1);
+                if (socket != null) {
+                    socket.connect();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Reflection RFCOMM socket connect failed: " + e.getMessage());
+                try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                throw new IOException("Failed to connect via insecure, secure, and reflection RFCOMM: " + (lastException != null ? lastException.getMessage() : e.getMessage()), e);
+            }
+        }
+
         if (socket == null) {
             throw new IOException("socket connection not established");
         }
-
-        // Cancel discovery, even though we didn't start it
-        bluetoothAdapter.cancelDiscovery();
-
-        socket.connect();
 
         connectionThread = new ConnectionThread(socket);
         connectionThread.start();

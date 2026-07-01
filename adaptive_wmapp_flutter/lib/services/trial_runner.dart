@@ -85,7 +85,7 @@ class TrialRunner extends ChangeNotifier {
     }
   }
 
-  Future<void> start() async {
+  Future<void> start(String subjectId) async {
     if (_isRunning) return;
     _isRunning = true;
     elapsedSeconds = 0;
@@ -107,13 +107,16 @@ class TrialRunner extends ChangeNotifier {
     }
 
     _transitionTo(TrialPhase.finished, null);
-    final csvPath = await dataCollector.saveToCsvFile();
+    final csvPath = await dataCollector.saveToCsvFile(subjectId);
     final edfPath = await edfRecorder.stop();
     
     try {
       if (Platform.isAndroid) {
-        final sessionDate = DateTime.now().toIso8601String().split('T')[0];
-        final downloadDir = Directory('/storage/emulated/0/Download/AdaptiveWM/Session_$sessionDate');
+        final cleanSubject = subjectId.trim().isEmpty
+            ? 'unknown'
+            : subjectId.trim().replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+        final stamp = edfRecorder.sessionTimestamp ?? DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
+        final downloadDir = Directory('/storage/emulated/0/Download/AdaptiveWM/${cleanSubject}_$stamp');
         if (!await downloadDir.exists()) {
           await downloadDir.create(recursive: true);
         }

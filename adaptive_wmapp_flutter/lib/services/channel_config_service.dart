@@ -9,7 +9,7 @@ const _xampL10Labels = [
 ];
 
 /// Default EEG electrode labels for the 2-ch Orbit headset.
-const _orbitLabels = ['Fp1', 'Fp2'];
+const _orbitLabels = ['Fp1', 'Fp2', 'PPG'];
 
 /// Holds a list of EEG channel labels used for EDF header metadata and UI.
 class ChannelConfig {

@@ -26,6 +26,7 @@ class EdfRecorder {
 
   bool get isRecording => _writer != nullptr;
   String? get path => _path;
+  String? get sessionTimestamp => _sessionTimestamp;
 
   void setMarker(int markerCode) {
     _markerQueue.add(markerCode);
@@ -66,13 +67,8 @@ class EdfRecorder {
     _markerQueue.clear();
 
     // ── Resolve output directory ───────────────────────────────────────────
-    Directory rootDir;
-    if (Platform.isAndroid) {
-      rootDir = Directory('/storage/emulated/0/Download/AdaptiveWM');
-    } else {
-      final dir = await getApplicationDocumentsDirectory();
-      rootDir = Directory('${dir.path}/ACDMT');
-    }
+    final dir = await getApplicationDocumentsDirectory();
+    final rootDir = Directory('${dir.path}/data');
     if (!await rootDir.exists()) {
       await rootDir.create(recursive: true);
     }

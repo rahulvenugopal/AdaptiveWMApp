@@ -8,4 +8,5 @@ name = "angel_eeg_core"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+chrono = "0.4.45"
 # No external dependencies required for EDF writing, ensuring a lightweight binary footprint

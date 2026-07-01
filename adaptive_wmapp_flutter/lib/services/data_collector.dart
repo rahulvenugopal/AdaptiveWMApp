@@ -36,23 +36,21 @@ class DataCollector {
     return csv.encode(rows);
   }
 
-  Future<String> saveToCsvFile() async {
+  Future<String> saveToCsvFile(String subjectId) async {
     final csvString = await exportCsvString();
     
-    Directory rootDir;
-    if (Platform.isAndroid) {
-      rootDir = Directory('/storage/emulated/0/Download/AdaptiveWM');
-    } else {
-      final docs = await getApplicationDocumentsDirectory();
-      rootDir = Directory('${docs.path}/ACDMT');
+    final docs = await getApplicationDocumentsDirectory();
+    final dataDir = Directory('${docs.path}/data');
+    if (!await dataDir.exists()) {
+      await dataDir.create(recursive: true);
     }
 
-    if (!await rootDir.exists()) {
-      await rootDir.create(recursive: true);
-    }
+    final cleanSubject = subjectId.trim().isEmpty
+        ? 'unknown'
+        : subjectId.trim().replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
 
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final file = File('${rootDir.path}/adaptive_wm_$timestamp.csv');
+    final file = File('${dataDir.path}/adaptive_wm_${cleanSubject}_$timestamp.csv');
     await file.writeAsString(csvString);
     return file.path;
   }

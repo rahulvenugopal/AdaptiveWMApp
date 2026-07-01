@@ -162,7 +162,8 @@ pub unsafe extern "C" fn tn_edf_push_sample(
     let values = std::slice::from_raw_parts(samples, count);
     for channel in 0..writer.channel_count {
         let value = values.get(channel).copied().unwrap_or(0.0);
-        writer.record_samples[channel].push(value.round().clamp(-32768.0, 32767.0) as i16);
+        let scaled = (value * 32767.0 / 250000.0).round();
+        writer.record_samples[channel].push(scaled.clamp(-32768.0, 32767.0) as i16);
     }
     if writer.record_samples[0].len() >= writer.sample_rate {
         write_edf_record(writer).is_ok()
@@ -252,12 +253,15 @@ fn edf_header(
 ) -> Vec<u8> {
     let header_bytes = 256 + channel_count * 256;
     let mut header = Vec::with_capacity(header_bytes);
+    let now = chrono::Local::now();
+    let date_str = now.format("%d.%m.%y").to_string();
+    let time_str = now.format("%H.%M.%S").to_string();
 
     header.extend(ascii_pad("0", 8));
     header.extend(ascii_pad(subject, 80));
     header.extend(ascii_pad("Startdate ANGEL EEG/fNIRS", 80));
-    header.extend(ascii_pad("01.01.26", 8));
-    header.extend(ascii_pad("00.00.00", 8));
+    header.extend(ascii_pad(&date_str, 8));
+    header.extend(ascii_pad(&time_str, 8));
     header.extend(ascii_pad(&header_bytes.to_string(), 8));
     header.extend(ascii_pad("", 44));
     header.extend(ascii_pad(&records.to_string(), 8));
@@ -281,10 +285,10 @@ fn edf_header(
     }
     // Physical min/max
     for _ in 0..channel_count {
-        header.extend(ascii_pad("-32768", 8));
+        header.extend(ascii_pad("-250000", 8));
     }
     for _ in 0..channel_count {
-        header.extend(ascii_pad("32767", 8));
+        header.extend(ascii_pad("250000", 8));
     }
     // Digital min/max
     for _ in 0..channel_count {

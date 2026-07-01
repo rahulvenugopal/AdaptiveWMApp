@@ -73,6 +73,8 @@ class AcquisitionService {
   final List<int> _bleBuffer = [];
   String _orbitTextBuffer = '';
   final _random = Random();
+  double _ppgX1 = 0.0;
+  double _ppgY1 = 0.0;
 
   StreamSubscription<classic.BluetoothDiscoveryResult>? _classicScanSub;
   StreamSubscription<List<ble.ScanResult>>? _bleScanSub;
@@ -100,8 +102,8 @@ class AcquisitionService {
   AcquisitionState get currentState => _currentState;
 
   int get channelCount {
-    if (_lastConnectedDevice == null) return 0;
-    if (_lastConnectedDevice!.kind == DeviceKind.orbit) return 2;
+    if (_lastConnectedDevice == null) return 16;
+    if (_lastConnectedDevice!.kind == DeviceKind.orbit) return 3;
     return 16;
   }
 
@@ -172,7 +174,7 @@ class AcquisitionService {
             .startDiscovery()
             .listen((result) {
               final name = result.device.name ?? 'Unknown classic device';
-              if (_matchesXampPrefix(name)) return;
+              if (_kindForName(name) != DeviceKind.epidome) return;
               _addDevice(
                 EegDevice(
                   name: name,
@@ -183,7 +185,7 @@ class AcquisitionService {
               );
             });
       } catch (e) {
-        debugPrint('[Classic Bluetooth scan error] $e');
+        debugPrint('[Classic scan error] $e');
       }
     }
 
@@ -326,7 +328,31 @@ class AcquisitionService {
   }
 
   Future<void> _connectClassic(EegDevice device) async {
-    _classicConnection = await classic.BluetoothConnection.toAddress(device.id);
+    try {
+      final bondState = await classic.FlutterBluetoothSerial.instance.getBondStateForAddress(device.id);
+      debugPrint('[AcquisitionService] Current bond state for ${device.id}: $bondState');
+      if (!bondState.isBonded) {
+        debugPrint('[AcquisitionService] Device is not bonded. Triggering bonding first...');
+        final bonded = await classic.FlutterBluetoothSerial.instance.bondDeviceAtAddress(device.id);
+        debugPrint('[AcquisitionService] Bonding result: $bonded');
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+    } catch (e) {
+      debugPrint('[AcquisitionService] Bond state check/bonding failed: $e');
+    }
+
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        _classicConnection = await classic.BluetoothConnection.toAddress(device.id);
+        break;
+      } catch (e) {
+        retries--;
+        debugPrint('[AcquisitionService] Classic connect failed: $e. Retries left: $retries');
+        if (retries == 0) rethrow;
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
     _classicInputSub = _classicConnection!.input?.listen(
       (data) {
         if (device.kind == DeviceKind.epidome) {
@@ -346,16 +372,34 @@ class AcquisitionService {
 
     await _bleConnectionStateSub?.cancel();
     _bleConnectionStateSub = _bleDevice!.connectionState.listen((connectionState) {
-      if (connectionState == ble.BluetoothConnectionState.disconnected) {
+      if (_currentState == AcquisitionState.streaming &&
+          connectionState == ble.BluetoothConnectionState.disconnected) {
         _handleUnexpectedDisconnect();
       }
     });
 
-    await _bleDevice!.connect(
-      license: ble.License.nonprofit,
-      timeout: const Duration(seconds: 12),
-      autoConnect: false,
-    );
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        await _bleDevice!.connect(
+          license: ble.License.nonprofit,
+          timeout: const Duration(seconds: 12),
+          autoConnect: false,
+        );
+        break;
+      } catch (e) {
+        retries--;
+        debugPrint('[AcquisitionService] BLE connect failed: $e. Retries left: $retries');
+        if (retries == 0) rethrow;
+        try { await _bleDevice!.disconnect(); } catch (_) {}
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+    }
+
+    if (Platform.isAndroid) {
+      await Future.delayed(const Duration(milliseconds: 350));
+    }
+
     try {
       await _bleDevice!.requestMtu(247, predelay: 0);
     } catch (error) {
@@ -467,9 +511,19 @@ class AcquisitionService {
           .whereType<double>()
           .toList(growable: false);
       if (values.isNotEmpty) {
+        final chs = values.take(3).toList();
+        while (chs.length < 3) chs.add(0.0);
+        
+        // PPG Preprocessing (DC Blocker)
+        final rawPpg = chs[2];
+        final ppgY = rawPpg - _ppgX1 + 0.995 * _ppgY1;
+        _ppgX1 = rawPpg;
+        _ppgY1 = ppgY;
+        chs[2] = ppgY * 0.01; // Scale down slightly for UI
+
         _samples.add(
           EegSample(
-            channels: values.take(2).toList(),
+            channels: chs,
             sampleRate: 250,
             timestamp: DateTime.now(),
             source: 'Orbit',
@@ -499,11 +553,21 @@ class AcquisitionService {
         final json = jsonDecode(normalized) as Map<String, dynamic>;
         final a = _numberList(json['A']);
         final b = _numberList(json['B']);
+        final e = _numberList(json['E']);
         final count = min(a.length, b.length);
         for (var i = 0; i < count; i++) {
+          final chs = [-0.0224 * a[i], -0.0224 * b[i]];
+          if (e.isNotEmpty) {
+            final rawPpg = i < e.length ? e[i].toDouble() : e[0].toDouble();
+            final ppgY = rawPpg - _ppgX1 + 0.995 * _ppgY1;
+            _ppgX1 = rawPpg;
+            _ppgY1 = ppgY;
+            chs.add(ppgY * 0.01);
+          }
+          while (chs.length < 3) chs.add(0.0);
           _samples.add(
             EegSample(
-              channels: [-0.0224 * a[i], -0.0224 * b[i]],
+              channels: chs,
               sampleRate: 250,
               timestamp: DateTime.now(),
               source: 'Orbit',
@@ -622,6 +686,21 @@ class AcquisitionService {
         return (write: write, notify: notify);
       }
     }
+    ble.BluetoothCharacteristic? fallbackNotify;
+    ble.BluetoothCharacteristic? fallbackWrite;
+    for (final entries in byService.values) {
+      for (final c in entries) {
+        if (fallbackNotify == null && (c.properties.notify || c.properties.indicate)) {
+          fallbackNotify = c;
+        }
+        if (fallbackWrite == null && (c.properties.write || c.properties.writeWithoutResponse)) {
+          fallbackWrite = c;
+        }
+      }
+    }
+    if (fallbackNotify != null) {
+      return (write: fallbackWrite, notify: fallbackNotify);
+    }
     return null;
   }
 
@@ -668,16 +747,22 @@ class AcquisitionService {
   }
 
   void _addDevice(EegDevice device) {
-    final existing = _seenDevices.indexWhere((entry) => entry.id == device.id);
+    final isEeg = device.kind == DeviceKind.epidome || device.kind == DeviceKind.orbit;
+    final normalized = isEeg
+        ? EegDevice(
+            name: device.name,
+            id: device.id,
+            kind: device.kind,
+            isBle: true,
+          )
+        : device;
+
+    final existing = _seenDevices.indexWhere((entry) => entry.id == normalized.id);
     if (existing >= 0) {
-      final existingDevice = _seenDevices[existing];
-      if (existingDevice.isBle && !device.isBle) {
-        return;
-      }
-      _seenDevices[existing] = device;
+      _seenDevices[existing] = normalized;
     } else {
-      _seenDevices.add(device);
-      debugPrint('[Bluetooth scan] Added device ${device.name} (${device.id})');
+      _seenDevices.add(normalized);
+      debugPrint('[Bluetooth scan] Added device ${normalized.name} (${normalized.id})');
     }
     _publishDevices();
   }

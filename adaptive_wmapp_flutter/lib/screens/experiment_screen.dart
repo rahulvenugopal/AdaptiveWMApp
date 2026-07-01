@@ -206,7 +206,7 @@ class _ExperimentScreenState extends State<ExperimentScreen> {
                           }
                         }
                         return ElevatedButton(
-                          onPressed: () => runner.start(),
+                          onPressed: () => runner.start(widget.subjectId),
                           child: const Text("Start Experiment"),
                         );
                       }

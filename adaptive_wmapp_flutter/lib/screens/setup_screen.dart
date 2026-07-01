@@ -27,7 +27,7 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   static const int _channelCount = 16;
-  static const int _maxSamples = 1000;
+  int get _maxSamples => (_sampleRate * 60).round();
 
   final _subjectController = TextEditingController(text: 'Subj001');
   final _xampPrefixController = TextEditingController(text: 'AXXSPU00003');
@@ -40,6 +40,7 @@ class _SetupScreenState extends State<SetupScreen> {
   StreamSubscription<EegSample>? _lslSampleSub;
   StreamSubscription<AcquisitionState>? _stateSub;
   StreamSubscription<AcquisitionState>? _lslStateSub;
+  StreamSubscription<List<EegDevice>>? _devicesSub;
   Timer? _elapsedTimer;
   int _selectedChannel = 0;
   bool _stackedChannels = true;
@@ -130,6 +131,26 @@ class _SetupScreenState extends State<SetupScreen> {
     final lsl = context.read<LslEegAcquisitionService>();
     _sampleSub = acq.samples.listen(_onSample);
     _lslSampleSub = lsl.samples.listen(_onSample);
+
+    _devicesSub = acq.devices.listen((devices) {
+      if (_eegSource == 'bluetooth' &&
+          acq.currentState == AcquisitionState.scanning) {
+        for (final dev in devices) {
+          final upperName = dev.name.toUpperCase();
+          bool match = false;
+          if (_selectedDeviceKind == DeviceKind.orbit) {
+            match = acq.orbitPrefix.isNotEmpty && upperName.startsWith(acq.orbitPrefix.toUpperCase());
+          } else if (_selectedDeviceKind == DeviceKind.epidome) {
+            match = acq.xampPrefix.isNotEmpty && upperName.startsWith(acq.xampPrefix.toUpperCase());
+          }
+          if (match) {
+            debugPrint('[Autoconnect] Automatically connecting to: ${dev.name}');
+            acq.connect(dev);
+            break;
+          }
+        }
+      }
+    });
 
     _stateSub = acq.state.listen((state) {
       if (_eegSource != 'lsl') {
@@ -592,11 +613,15 @@ class _SetupScreenState extends State<SetupScreen> {
               final name = device.name.trim().toUpperCase();
               if (_selectedDeviceKind == DeviceKind.orbit) {
                 return device.kind == DeviceKind.orbit &&
-                    name.startsWith(acq.orbitPrefix.toUpperCase());
+                    (acq.orbitPrefix.isEmpty ||
+                        name.startsWith(acq.orbitPrefix.toUpperCase()) ||
+                        name.contains('ORBIT'));
               }
               return device.kind == DeviceKind.epidome &&
-                  device.isBle &&
-                  name.startsWith(acq.xampPrefix.toUpperCase());
+                  (acq.xampPrefix.isEmpty ||
+                      name.startsWith(acq.xampPrefix.toUpperCase()) ||
+                      name.contains('XAMP') ||
+                      name.contains('EPIDOME'));
             })
             .toList(growable: false);
         if (_selectedDevice != null && !devices.contains(_selectedDevice)) {
@@ -885,7 +910,21 @@ class _SetupScreenState extends State<SetupScreen> {
                       .where((d) => d.kind != DeviceKind.synthetic)
                       .toList();
                   if (btDevices.isEmpty) {
-                    return const Center(child: Text('No devices found'));
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Center(child: Text('No devices found')),
+                        if (acq.currentState == AcquisitionState.disconnected)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Text(
+                              '💡 Note: If devices do not appear or connection fails, please ensure Bluetooth & Location Services are turned ON and authorized in your tablet settings. Toggling Bluetooth off and on can also reset Android\'s connection stack.',
+                              style: TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                      ],
+                    );
                   }
                   return ListView.builder(
                     itemCount: btDevices.length,
@@ -1556,6 +1595,9 @@ class _SetupScreenState extends State<SetupScreen> {
     final isStreaming = _eegSource == 'lsl'
         ? lsl.currentState == AcquisitionState.streaming
         : acq.currentState == AcquisitionState.streaming;
+    final activeChannelCount = isStreaming
+        ? (_eegSource == 'lsl' ? (lsl.channelCount ?? 16) : acq.channelCount)
+        : 16;
 
     final hasData = _channelBuffers.any((channel) => channel.isNotEmpty);
     return Container(
@@ -1577,45 +1619,99 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    isStreaming
-                        ? 'EEG stream preview'
-                        : 'Connect a headset to preview EEG',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                IconButton(
-                  tooltip: _stackedChannels
-                      ? 'Single channel'
-                      : 'Stacked channels',
-                  onPressed: () {
-                    setState(() => _stackedChannels = !_stackedChannels);
-                    _saveCurrentConfig();
-                  },
-                  icon: Icon(
-                    _stackedChannels ? Icons.view_stream : Icons.show_chart,
-                  ),
-                ),
-                if (!_stackedChannels)
-                  DropdownButton<int>(
-                    value: _selectedChannel,
-                    items: List.generate(
-                      _channelCount,
-                      (index) => DropdownMenuItem(
-                        value: index,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildSignalQualityDot(index),
-                            const SizedBox(width: 6),
-                            Text(_getEffectiveLabels(_channelCount)[index]),
-                          ],
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          tooltip: _stackedChannels
+                              ? 'Single channel'
+                              : 'Stacked channels',
+                          onPressed: () {
+                            setState(() => _stackedChannels = !_stackedChannels);
+                            _saveCurrentConfig();
+                          },
+                          icon: Icon(
+                            _stackedChannels ? Icons.view_stream : Icons.show_chart,
+                          ),
                         ),
-                      ),
+                        if (!_stackedChannels) ...[
+                          const SizedBox(width: 8),
+                          DropdownButton<int>(
+                            value: activeChannelCount > 0 ? _selectedChannel.clamp(0, activeChannelCount - 1) : 0,
+                            items: List.generate(
+                              activeChannelCount,
+                              (index) => DropdownMenuItem(
+                                value: index,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildSignalQualityDot(index),
+                                    const SizedBox(width: 6),
+                                    Text(_getEffectiveLabels(activeChannelCount)[index]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setState(() => _selectedChannel = value ?? 0);
+                              _saveCurrentConfig();
+                            },
+                          ),
+                        ],
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: const Text('Notch'),
+                          selected: _notchEnabled,
+                          onSelected: (selected) {
+                            setState(() {
+                              _notchEnabled = selected;
+                              _resetDisplayFilters();
+                            });
+                            _saveCurrentConfig();
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        FilterChip(
+                          label: const Text('1-30 Hz'),
+                          selected: _bandpassEnabled,
+                          onSelected: (selected) {
+                            setState(() {
+                              _bandpassEnabled = selected;
+                              _resetDisplayFilters();
+                            });
+                            _saveCurrentConfig();
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        FilterChip(
+                          label: const Text('Autoscale'),
+                          selected: _autoscaleEnabled,
+                          onSelected: (selected) {
+                            setState(() => _autoscaleEnabled = selected);
+                            _saveCurrentConfig();
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        DropdownButton<int>(
+                          value: _eegDisplayDuration,
+                          items: const [5, 10, 20, 30, 60]
+                              .map(
+                                (s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text('${s}s'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            setState(() => _eegDisplayDuration = value ?? _eegDisplayDuration);
+                            _saveCurrentConfig();
+                          },
+                        ),
+                      ],
                     ),
-                    onChanged: (value) =>
-                        setState(() => _selectedChannel = value ?? 0),
                   ),
+                ),
               ],
             ),
           ),
@@ -1626,14 +1722,18 @@ class _SetupScreenState extends State<SetupScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 itemBuilder: (context, index) => FilterChip(
-                  label: Text(_getEffectiveLabels(_channelCount)[index]),
-                  selected: _visibleChannels[index],
+                  label: Text(_getEffectiveLabels(activeChannelCount)[index]),
+                  selected: index < _visibleChannels.length ? _visibleChannels[index] : true,
                   avatar: _buildSignalQualityDot(index),
                   onSelected: (selected) =>
-                      setState(() => _visibleChannels[index] = selected),
+                      setState(() {
+                        if (index < _visibleChannels.length) {
+                          _visibleChannels[index] = selected;
+                        }
+                      }),
                 ),
                 separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemCount: _channelCount,
+                itemCount: activeChannelCount,
               ),
             ),
           Expanded(
@@ -1651,7 +1751,7 @@ class _SetupScreenState extends State<SetupScreen> {
               },
               child: CustomPaint(
                 painter: WaveformPainter(
-                  channels: _channelBuffers,
+                  channels: _channelBuffers.take(activeChannelCount).toList(),
                   visibleChannels: _visibleChannels,
                   stacked: _stackedChannels,
                   selectedChannel: _selectedChannel,
@@ -1659,7 +1759,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   sampleRate: _sampleRate,
                   durationSeconds: _eegDisplayDuration,
                   autoscale: _autoscaleEnabled,
-                  channelLabels: _getEffectiveLabels(_channelCount),
+                  channelLabels: _getEffectiveLabels(activeChannelCount),
                 ),
                 child: Center(
                   child: hasData
